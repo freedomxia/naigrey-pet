@@ -1,0 +1,13 @@
+{
+  "mac": {
+    "version": "3.0.3",
+    "build": 7,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.0.3/naigrey-mac.zip",
+    "sha256": "ce83bb1728094a5d5a52bbd767d2112829cd1b77bb6c0a58f05d0d1855d6ddc2",
+    "signature": "klup7q2Rlb6M/9lkh5tc1KO3LHrdg88vwS07ylSRG8nuHu1MCOM8dSTwqDkhfJngiqGaEYhsLgI8V/YnNXZVBQ==",
+    "minimumSystem": "13.0",
+    "notes": "加了在线更新：菜单里点一下就能换新版本，更新包带签名校验",
+    "date": "2026-09-18"
+  },
+  "windows": null
+}
