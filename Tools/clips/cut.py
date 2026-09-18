@@ -36,7 +36,10 @@ for i in range(n):
     ys, xs = np.where(a)
     bottom = int(ys.max())
     band = slice(max(0, bottom - 55), bottom + 1)
-    white = (alpha[i][band] > 120) & (lum[i][band] > 180)
+    # 白爪子：亮，而且颜色是中性的——粉键盘也又亮又在底部，靠饱和度把它挡掉
+    colour = frames[i, band].astype(np.int16)
+    neutral = colour.max(axis=2) - colour.min(axis=2) < 25
+    white = (alpha[i][band] > 120) & (lum[i][band] > 180) & neutral
     wy, wx = np.where(white)
     shape.append(dict(x0=int(xs.min()), x1=int(xs.max()), y0=int(ys.min()), y1=bottom,
                       anchor=[float(wx.mean()) if len(wx) else float(xs.mean()), float(bottom)]))
@@ -53,14 +56,20 @@ def aligned_iou(i, j):
     b = np.roll(np.roll(alpha[j] > 120, -dy, axis=0), -dx, axis=1)
     return (a & b).sum() / (a | b).sum()
 
-def find_loop(lo, hi):
-    """走路段里最合适的一个完整步态：接缝按爪子对齐后最吻合的那一对。"""
-    best = None
-    for period in range(14, 30):
+def find_loop(lo, hi, periods=range(14, 30), earliest=False):
+    """一个完整的循环节：接缝按爪子对齐后最吻合的那一对。earliest=True 时在「够好」的里面取最早的
+    ——动作一旦稳定下来就该开始循环，否则前面几秒会被吞进进场那一段。"""
+    scores = {}
+    for period in periods:
         for start in range(lo, hi - period):
-            score = aligned_iou(start, start + period)
-            if best is None or score > best[2]: best = (start, period, score)
-    return best
+            scores[(start, period)] = aligned_iou(start, start + period)
+    if not scores: return None
+    ceiling = max(scores.values())
+    if not earliest:
+        best = max(scores, key=scores.get)
+        return best[0], best[1], ceiling
+    ok = [(start, period, score) for (start, period), score in scores.items() if score >= ceiling - 0.02]
+    return min(ok, key=lambda c: (c[0], -c[2]))
 
 def paw_series():
     """逐帧测「贴地的爪子往后滑了多少」，既用来定地面速度，也用来判断每一帧猫是不是真的在走。"""
@@ -124,6 +133,8 @@ def frame_scale(f0, f1, ratio):
     print(f"  缩放校正 ×{ratio:.2f}，按运动进度分摊")
     return 1 + (ratio - 1) * progress
 
+anchor_override = None
+
 def write_clip(name, f0, f1, loop=False, speed=None, pingpong=False, rescale=None, ball=False):
     """f0..f1 含头含尾；loop 的片段最后一帧不写（它等于第一帧）。"""
     last = f1 - 1 if loop else f1
@@ -138,9 +149,11 @@ def write_clip(name, f0, f1, loop=False, speed=None, pingpong=False, rescale=Non
     count = last - f0 + 1
     blend = 2 if loop else 0     # 循环接缝处把尾巴几帧往开头混，掩掉步态对不齐的那一点
     scales = frame_scale(f0, last, rescale)
+    first_anchor = anchor_override or shape[f0]["anchor"]
+    last_anchor = anchor_override or shape[last]["anchor"]
     clip = dict(name=name, file=f"{name}.mov", duration=round(count / FPS, 4), size=[cw, ch],
-                start=[round(shape[f0]["anchor"][0] - x0, 1), round(shape[f0]["anchor"][1] - y0, 1)],
-                end=[round(shape[last]["anchor"][0] - x0, 1), round(shape[last]["anchor"][1] - y0, 1)])
+                start=[round(first_anchor[0] - x0, 1), round(first_anchor[1] - y0, 1)],
+                end=[round(last_anchor[0] - x0, 1), round(last_anchor[1] - y0, 1)])
     if loop:
         clip["loop"] = True
         clip["end"] = clip["start"]
@@ -252,8 +265,10 @@ if mode == "walk":
 elif mode == "inout":
     # 一段「坐 → 道具进画 → 有规律地做事（可循环）→ 道具出画 → 坐回来」：切成进场 / 循环 / 退场三段
     names = (sys.argv[4] + "In", sys.argv[4], sys.argv[4] + "Out")
-    lo, hi = int(n * 0.2), int(n * 0.85)
-    start, period, score = find_loop(lo, hi)
+    anchor_override = shape[0]["anchor"]     # 首帧还没有道具，那时的爪子位置才是真的
+    print(f"锚点固定在首帧的 {np.round(anchor_override, 1)}")
+    lo, hi = int(n * 0.15), int(n * 0.9)
+    start, period, score = find_loop(lo, hi, periods=range(10, 40), earliest=True)
     print(f"循环 {start}→{start+period}（{period} 帧 {period/FPS:.2f}s，接缝 {score:.3f}）")
     # 还在循环里的最后一帧：和循环中同相位的那一帧还对得上，就算还在做同一件事
     last = start

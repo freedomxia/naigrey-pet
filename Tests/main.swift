@@ -354,3 +354,32 @@ do {
     assert(TypingWatch.starts >= 1 && TypingWatch.ends >= 1)
     print("PASS: typing pace drives the clip speed within limits, and both watches have hysteresis")
 }
+
+// 陪你打字的判定：连续敲一阵才开始，停一下就收手，而且中途的小停顿不算。
+do {
+    let watch = TypingWatch()
+    var now = 100.0
+    func type(seconds: Double, every gap: Double) {          // 模拟按固定节奏敲键盘
+        var since = 0.0
+        while since < seconds {
+            now += 0.05; since += 0.05
+            watch.update(now, keyAge: gap == 0 ? 0 : (since.truncatingRemainder(dividingBy: gap)))
+        }
+    }
+    func pause(_ seconds: Double) {
+        var since = 0.0
+        while since < seconds { now += 0.05; since += 0.05; watch.update(now, keyAge: since) }
+    }
+    pause(3)
+    assert(!watch.isTyping, "没人敲的时候不能以为在打字")
+    type(seconds: 1.0, every: 0.25)
+    assert(!watch.isTyping, "敲一秒不算，那可能只是回个消息")
+    type(seconds: 3.0, every: 0.25)
+    assert(watch.isTyping, "连续敲三秒就该跟着敲了")
+    assert(watch.pace > 2, "手速应该量得出来，得到 \(watch.pace)")
+    pause(1.0)
+    assert(watch.isTyping, "停一秒是在想下一句，不该马上收手")
+    pause(2.5)
+    assert(!watch.isTyping, "停久了就该收手")
+    print(String(format: "PASS: typing watch starts after a real burst (pace %.1f keys/s), rides out short pauses, stops when you do", watch.pace))
+}

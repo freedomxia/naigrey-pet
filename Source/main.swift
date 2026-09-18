@@ -677,7 +677,7 @@ final class PetController: NSObject, NSApplicationDelegate {
     var stage: ClipStage?
     var act: String? {
         didSet {
-            if demo && act != oldValue {
+            if (demo || cpuLog) && act != oldValue {
                 print(String(format: "t=%.1f act %@ -> %@  sleeping=%d", CACurrentMediaTime() - launched, oldValue ?? "-", act ?? "-", sleeping ? 1 : 0)); fflush(stdout)
             }
         }
@@ -827,7 +827,7 @@ final class PetController: NSObject, NSApplicationDelegate {
                                                         Double(stage?.takeFrameCount() ?? 0) / (now - mark.wall), petView.worstGap * 1000)
             petView.resetFrameCount()
             print("   " + status)
-            print(String(format: "cpu %.1f%%  fps %.1f  clock %.1f  pose %@  act %@  rss %.0f MiB", (cpu - mark.cpu) / (now - mark.wall) * 100, fps, ticks, "\(pose)", act ?? "-", Double(usage.ru_maxrss) / 1_048_576))
+            print(String(format: "cpu %.1f%%  fps %.1f  clock %.1f  pose %@  act %@  rss %.0f MiB  声音 %@", (cpu - mark.cpu) / (now - mark.wall) * 100, fps, ticks, "\(pose)", act ?? "-", Double(usage.ru_maxrss) / 1_048_576, audio.playingApp ?? "-"))
             fflush(stdout)
         }
         cpuMark = (now, cpu)
@@ -1398,7 +1398,9 @@ final class PetController: NSObject, NSApplicationDelegate {
             if company != .none { stopCompany() }
             return
         }
-        let wanted: Company = typingNow ? .typing : (musicNow ? .music : .none)
+        // 人离开很久了就别陪了，让作息接管（去打盹）
+        let away = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+        let wanted: Company = away > 200 ? .none : (typingNow ? .typing : (musicNow ? .music : .none))
         if wanted != company {
             if company != .none { stopCompany() }
             if wanted != .none, act == nil, pose == .idle { startCompany(wanted) }

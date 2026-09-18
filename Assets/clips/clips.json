@@ -192,6 +192,110 @@
         364.9,
         44.0
       ]
+    },
+    {
+      "name": "musicIn",
+      "file": "musicIn.mov",
+      "duration": 2.0,
+      "size": [
+        596,
+        702
+      ],
+      "start": [
+        326.8,
+        689.0
+      ],
+      "end": [
+        326.8,
+        689.0
+      ]
+    },
+    {
+      "name": "music",
+      "file": "music.mov",
+      "duration": 1.4167,
+      "size": [
+        586,
+        528
+      ],
+      "start": [
+        336.8,
+        515.0
+      ],
+      "end": [
+        336.8,
+        515.0
+      ],
+      "loop": true
+    },
+    {
+      "name": "musicOut",
+      "file": "musicOut.mov",
+      "duration": 2.8333,
+      "size": [
+        598,
+        702
+      ],
+      "start": [
+        328.8,
+        689.0
+      ],
+      "end": [
+        328.8,
+        689.0
+      ]
+    },
+    {
+      "name": "typeIn",
+      "file": "typeIn.mov",
+      "duration": 1.875,
+      "size": [
+        1032,
+        484
+      ],
+      "start": [
+        551.5,
+        453.0
+      ],
+      "end": [
+        551.5,
+        453.0
+      ]
+    },
+    {
+      "name": "type",
+      "file": "type.mov",
+      "duration": 0.4167,
+      "size": [
+        744,
+        426
+      ],
+      "start": [
+        397.5,
+        395.0
+      ],
+      "end": [
+        397.5,
+        395.0
+      ],
+      "loop": true
+    },
+    {
+      "name": "typeOut",
+      "file": "typeOut.mov",
+      "duration": 1.2917,
+      "size": [
+        1020,
+        478
+      ],
+      "start": [
+        547.5,
+        447.0
+      ],
+      "end": [
+        547.5,
+        447.0
+      ]
     }
   ]
 }

@@ -9,6 +9,8 @@ final class AudioWatch {
     private var playingSince: TimeInterval?
     private var quietSince: TimeInterval = 0
     private(set) var isPlaying = false
+    /// 正在放声音的 App，诊断用。
+    private(set) var playingApp: String?
 
     /// How long sound has to run before it counts as music, and how long silence has to last before it stops.
     static let starts = 8.0, ends = 4.0
@@ -26,7 +28,47 @@ final class AudioWatch {
         }
     }
 
+    /// 这些是系统的提示音、语音助手一类的东西，响一下不算「在听歌」。
+    private static let notMusic: Set<String> = ["systemsoundserverd", "com.apple.PowerChime", "com.apple.SiriNCService",
+                                                "com.apple.CoreSpeech", "com.apple.assistantd", "com.apple.accessibility.heard",
+                                                "com.apple.universalaccessd", "com.apple.controlcenter"]
+    /// 正在放声音的那个 App 的名字，没有就是没人在放。比「设备在不在转」准得多：
+    /// 桌宠自己那些静音的播放器不会被算进去，系统提示音也能挡掉。
+    @available(macOS 14.4, *)
+    private func appPlaying() -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
+        var processes = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &processes) == noErr else { return nil }
+        let mine = ProcessInfo.processInfo.processIdentifier
+        for process in processes {
+            var running = UInt32(0); var one = UInt32(MemoryLayout<UInt32>.size)
+            var outputAddress = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunningOutput,
+                                                           mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            guard AudioObjectGetPropertyData(process, &outputAddress, 0, nil, &one, &running) == noErr, running != 0 else { continue }
+            var pid = pid_t(0); var pidSize = UInt32(MemoryLayout<pid_t>.size)
+            var pidAddress = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID,
+                                                        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectGetPropertyData(process, &pidAddress, 0, nil, &pidSize, &pid)
+            if pid == mine { continue }
+            var bundle: CFString? = nil; var bundleSize = UInt32(MemoryLayout<CFString?>.size)
+            var bundleAddress = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyBundleID,
+                                                           mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectGetPropertyData(process, &bundleAddress, 0, nil, &bundleSize, &bundle)
+            let identifier = (bundle as String?) ?? ""
+            if AudioWatch.notMusic.contains(identifier) { continue }
+            return NSRunningApplication(processIdentifier: pid)?.localizedName ?? (identifier.isEmpty ? "某个程序" : identifier)
+        }
+        return nil
+    }
+
     private var outputIsRunning: Bool {
+        if #available(macOS 14.4, *) {
+            playingApp = appPlaying()
+            return playingApp != nil
+        }
         guard device != 0 else { return false }
         var running = UInt32(0)
         var size = UInt32(MemoryLayout<UInt32>.size)
@@ -65,12 +107,17 @@ final class TypingWatch {
     /// Call a few times a second.
     @discardableResult
     func update(_ now: TimeInterval) -> Bool {
-        let age = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
-        // 距离上次按键的时间「变小了」，说明这中间又敲了一下
-        if age < lastKeyAge { beats.append(now - age) }
+        update(now, keyAge: CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown))
+    }
+
+    /// 同上，但按键时间由外部给——这样这套判断可以脱离真人敲键盘来测试。
+    @discardableResult
+    func update(_ now: TimeInterval, keyAge age: TimeInterval) -> Bool {
+        // 距离上次按键的时间「变小了」，说明这中间又敲了一下。第一次读数没有可比的对象，不能当成敲了一下。
+        if age < lastKeyAge && lastKeyAge != .greatestFiniteMagnitude { beats.append(now - age) }
         lastKeyAge = age
         beats.removeAll { now - $0 > 6 }
-        if age < 1.2, let first = beats.first, now - first >= TypingWatch.starts, beats.count >= 6 { isTyping = true }
+        if age < 1.2, let first = beats.first, now - first >= TypingWatch.starts, beats.count >= 8 { isTyping = true }
         if age > TypingWatch.ends { isTyping = false }
         return isTyping
     }

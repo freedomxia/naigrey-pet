@@ -105,8 +105,12 @@ if cuts: issues.append(f"疑似切镜头，在第 {', '.join(f'{t:.1f}' for t in
 
 # 4. 和参考图比：还是不是同一只猫
 if reference and os.path.exists(reference):
-    ref = np.array(Image.open(reference).convert("RGB").resize((W, H))).astype(np.int16)
-    refmask = despeckle(~((ref[...,1] - np.maximum(ref[...,0], ref[...,2])) > 30))
+    source = Image.open(reference).convert("RGBA").resize((W, H))
+    rgba = np.array(source).astype(np.int16)
+    if (rgba[..., 3] < 20).sum() > W * H * 0.02:      # 带透明通道的抠图
+        refmask = despeckle(rgba[..., 3] > 128)
+    else:                                            # 绿幕参考图
+        refmask = despeckle(~((rgba[..., 1] - np.maximum(rgba[..., 0], rgba[..., 2])) > 30))
     def norm(m):
         ys, xs = np.where(m)
         box = m[ys.min():ys.max()+1, xs.min():xs.max()+1]

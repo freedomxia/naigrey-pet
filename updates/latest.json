@@ -1,12 +1,12 @@
 {
   "mac": {
-    "version": "3.2.1",
-    "build": 12,
-    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.2.1/naigrey-mac.zip",
-    "sha256": "dd76c75147792c316b76bbdc63a4ec92352758f58bf0ebb34a7473f7de340b64",
-    "signature": "rRmOezo6floXLkjxqy+emACGwgzvMfoF0pinCUuIdWxNLtsVZHbR12+AKiAxc3iyWRLfsfDCIRxtq+RcaVb8Bg==",
+    "version": "3.3.0",
+    "build": 13,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.3.0/naigrey-mac.zip",
+    "sha256": "709cf4ad3bf3ffadeb0f05b518d084e55ff9f69e0528717d184fd9ae2f03469c",
+    "signature": "8Fp60xf4/aj6m4x0qBacu0xI9dYVd9JwSME51ikLPEtvBvVwOuI04BAXEm2L8KnJGC4OkNwxT6yIvu+Bne6gDA==",
     "minimumSystem": "13.0",
-    "notes": "修掉动作素材自己在一段里漂色：抠像时按待机那只猫逐帧校色，最大色偏从 16 降到 12",
+    "notes": "陪你打字、陪你听歌：你敲键盘它跟着敲（速度随手速），你放音乐它戴上耳机点头",
     "date": "2026-09-18"
   },
   "windows": null
