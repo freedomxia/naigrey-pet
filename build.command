@@ -12,7 +12,7 @@ if [[ ! -f "$APP/Contents/Resources/cats.png" ]]; then
   print -u2 '缺少透明素材 cats.png，请保留完整交付目录。'
   exit 1
 fi
-xcrun swiftc -O -target arm64-apple-macos13.0 Source/Sprites.swift Source/Rig.swift Source/Renderer.swift Source/Motion.swift Source/Ball.swift Source/Clips.swift Source/Updater.swift Source/main.swift -framework AppKit -framework ImageIO -framework QuartzCore -framework Metal -framework Accelerate -framework AVFoundation -o "$APP/Contents/MacOS/Naigrey"
+xcrun swiftc -O -target arm64-apple-macos13.0 Source/Sprites.swift Source/Rig.swift Source/Renderer.swift Source/Motion.swift Source/Ball.swift Source/Clips.swift Source/Senses.swift Source/Updater.swift Source/main.swift -framework AppKit -framework ImageIO -framework QuartzCore -framework Metal -framework Accelerate -framework AVFoundation -o "$APP/Contents/MacOS/Naigrey"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

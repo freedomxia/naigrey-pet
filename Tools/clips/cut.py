@@ -5,6 +5,8 @@
 模式：
   walk    一段「坐→起身→走→停下→坐回」的素材，切成 standUp / walk（循环）/ sitDown 三段，
           三段首尾相接、不留缝；走路段自动找步态循环点并测出地面速度。
+  inout   一段「坐→道具进画→有规律地做事→道具出画→坐回」的素材（打字、听歌），切成
+          <名字>In / <名字> / <名字>Out 三段，中间那段是循环。
   simple  一段「坐→做一件事→坐回」的素材，整段切成一个片段。
 
 每个片段都记下白爪子中心（App 用它把猫踩在同一条地面线上）、裁剪框、时长；坐姿高度从首帧量，
@@ -247,6 +249,23 @@ if mode == "walk":
     a, b = moving_window(settle, n - 1)
     if a is not None: down.update(speed=round(speed, 1), moveFrom=a, moveTo=b)
     clips.append(down)
+elif mode == "inout":
+    # 一段「坐 → 道具进画 → 有规律地做事（可循环）→ 道具出画 → 坐回来」：切成进场 / 循环 / 退场三段
+    names = (sys.argv[4] + "In", sys.argv[4], sys.argv[4] + "Out")
+    lo, hi = int(n * 0.2), int(n * 0.85)
+    start, period, score = find_loop(lo, hi)
+    print(f"循环 {start}→{start+period}（{period} 帧 {period/FPS:.2f}s，接缝 {score:.3f}）")
+    # 还在循环里的最后一帧：和循环中同相位的那一帧还对得上，就算还在做同一件事
+    last = start
+    for i in range(start + period, n):
+        if aligned_iou(i, start + (i - start) % period) > score - 0.08: last = i
+        elif i - last > period: break
+    settle = start + ((last - start) // period) * period
+    begin, _ = trim_still(0, start)
+    _, finish = trim_still(settle, n - 1)
+    clips.append(write_clip(names[0], begin, start))
+    clips.append(write_clip(names[1], start, start + period, loop=True))
+    clips.append(write_clip(names[2], settle, finish))
 elif mode == "split":
     # 一段「坐 → 趴下 → 睡着」：动作停下来的地方切开，后半段做成循环
     small = (alpha > 120)[:, ::6, ::6]

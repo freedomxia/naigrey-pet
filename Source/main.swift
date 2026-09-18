@@ -459,6 +459,15 @@ final class PetView: NSView {
 
     // MARK: Effects
 
+    /// 听歌时头顶飘出来的音符。
+    func note() {
+        guard let layout else { return }
+        let head = layout.rects[Pose.idle.rawValue]
+        particle(["♪", "♫", "♩"].randomElement()!, color: NSColor(calibratedRed: 0.86, green: 0.5, blue: 0.62, alpha: 1),
+                 at: CGPoint(x: head.midX + CGFloat.random(in: -0.3...0.3) * head.width, y: head.minY + head.height * 0.92),
+                 size: layout.fontSize * CGFloat.random(in: 0.85...1.25), rise: layout.catHeight * 0.5, duration: 2.2)
+    }
+
     func puffZ() {
         guard let layout else { return }
         let head = layout.rects[Pose.sleep.rawValue]
@@ -650,6 +659,13 @@ final class PetController: NSObject, NSApplicationDelegate {
     var swatKicked = false
     var playEnergy = 0.0
     var lastPlayTick = CACurrentMediaTime()
+    /// 陪着你做事：你打字它跟着敲，你放歌它戴上耳机点头。
+    enum Company { case none, typing, music }
+    var company: Company = .none
+    var companyOn = true
+    let audio = AudioWatch()
+    let typing = TypingWatch()
+    var nextNote: TimeInterval = 0
     /// Online updates from GitHub.
     let updater = Updater()
     var pendingUpdate: Updater.Release?
@@ -700,6 +716,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         if upgrading { defaults.removeObject(forKey: "size"); defaults.removeObject(forKey: "roaming") }
         roaming = defaults.object(forKey: "roaming") == nil ? true : defaults.bool(forKey: "roaming")
         routineOn = defaults.object(forKey: "routine") == nil ? true : defaults.bool(forKey: "routine")
+        companyOn = defaults.object(forKey: "company") == nil ? true : defaults.bool(forKey: "company")
         if let directory = Bundle.main.resourceURL?.appendingPathComponent("clips"), let clips = ClipLibrary.load(from: directory) {
             library = clips
             stage = ClipStage(directory: directory)
@@ -783,6 +800,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         }
         if ticks % 20 == 0 { routineTick(now) }
         if ticks % 200 == 0 { updateTick(now) }
+        if ticks % 5 == 0 { companyTick(now) }
         if let ball { updatePlay(now, ball) }
         setWalking(wantsToWalk || (videoWalking && !dragging))
         // Let the surrounding desktop receive clicks; only the cat's visible pixels are interactive.
@@ -1055,6 +1073,7 @@ final class PetController: NSObject, NSApplicationDelegate {
 
     func fallAsleep(auto: Bool, nap: Double? = nil) {
         guard !sleeping else { return }
+        if company != .none { stopCompany() }
         if play != .off { stopPlaying() }
         sleeping = true
         autoSlept = auto
@@ -1095,6 +1114,13 @@ final class PetController: NSObject, NSApplicationDelegate {
 
     // MARK: Daily rhythm
 
+    @objc func toggleCompany() {
+        companyOn.toggle()
+        defaults.set(companyOn, forKey: "company")
+        if !companyOn, company != .none { stopCompany() }
+        say(companyOn ? "你忙你的，我陪着～" : "好，我自己玩", for: 2)
+        refreshMenu()
+    }
     @objc func toggleRoutine() {
         routineOn.toggle()
         say(routineOn ? "我会跟着你的作息来～" : "好的，我自己玩", for: 2)
@@ -1361,6 +1387,48 @@ final class PetController: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless(); save(); greet()
     }
     @objc func quit() { NSApp.terminate(nil) }
+    // MARK: Keeping you company
+
+    /// Decides whether to sit and type along with you, or put headphones on. Typing wins: it is the thing
+    /// you are actually doing, and it reads your rhythm rather than just the fact that sound is playing.
+    func companyTick(_ now: TimeInterval) {
+        let typingNow = typing.update(now), musicNow = audio.update(now)
+        if company == .typing { stage?.rate = typing.playbackRate }
+        guard companyOn, !demo, !dragging, !sleeping, play == .off, library != nil else {
+            if company != .none { stopCompany() }
+            return
+        }
+        let wanted: Company = typingNow ? .typing : (musicNow ? .music : .none)
+        if wanted != company {
+            if company != .none { stopCompany() }
+            if wanted != .none, act == nil, pose == .idle { startCompany(wanted) }
+        }
+        if company == .music, now >= nextNote {
+            nextNote = now + Double.random(in: 0.9...1.8)
+            petView.note()
+        }
+    }
+
+    func startCompany(_ kind: Company) {
+        let names = kind == .typing ? ("typeIn", "type") : ("musicIn", "music")
+        guard library?[names.0] != nil, library?[names.1] != nil else { return }
+        stage?.rate = kind == .typing ? typing.playbackRate : 1
+        if begin(names.0, then: { [weak self] in _ = self?.begin(names.1) }) {
+            company = kind
+            nextNote = CACurrentMediaTime() + 1
+        }
+    }
+
+    /// Puts the keyboard or the headphones away, then hands back to the drawn cat.
+    func stopCompany() {
+        let leaving = company
+        company = .none
+        stage?.rate = 1
+        guard leaving != .none, act != nil else { return }
+        let out = leaving == .typing ? "typeOut" : "musicOut"
+        if library?[out] == nil || !perform(out) { settle() }
+    }
+
     // MARK: Staying up to date
 
     /// Looks for a new build at most once a day, quietly. Nothing is downloaded until you say so.
@@ -1461,6 +1529,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         _ = add(ball == nil ? "丢个毛线球" : "收起毛线球", #selector(toggleBall))
         let roam = add("自动散步", #selector(toggleRoaming)); roam.state = roaming ? .on : .off
         let rhythm = add("跟着我的作息", #selector(toggleRoutine)); rhythm.state = routineOn ? .on : .off
+        let keepCompany = add("陪我打字 / 听歌", #selector(toggleCompany)); keepCompany.state = companyOn ? .on : .off
         let sizes = NSMenuItem(title: "猫咪大小", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         for (name, size) in PetLayout.sizes {

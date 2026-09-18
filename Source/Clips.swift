@@ -12,6 +12,9 @@ extension ClipInfo {
         "stretch": (.sitting, .sitting), "walk": (.standing, .standing),
         "lieDown": (.sitting, .lying), "sleep": (.lying, .lying), "wake": (.lying, .sitting),
         "standUp": (.sitting, .standing), "sitDown": (.standing, .sitting),
+        // 陪你打字、陪你听歌：道具在片段里自己进画出画，所以首尾都是原来的坐姿
+        "typeIn": (.sitting, .sitting), "type": (.sitting, .sitting), "typeOut": (.sitting, .sitting),
+        "musicIn": (.sitting, .sitting), "music": (.sitting, .sitting), "musicOut": (.sitting, .sitting),
     ]
 
     /// The move that gets the cat from one pose to another, or nil when it is already there. From a crouch it
@@ -129,6 +132,7 @@ final class ClipStage: NSObject {
         var boundary: Any?
         var film: Film?
         var filmStart = 0.0
+        var filmTime = 0.0          // 自己走的播放时间，可以比真实时间快或慢
         var shownFrame: CGImage?
 
         func clear() {
@@ -265,11 +269,16 @@ final class ClipStage: NSObject {
     private(set) var framesShown = 0
     func takeFrameCount() -> Int { defer { framesShown = 0 }; return framesShown }
 
+    /// How fast a looping clip plays. Typing along with you runs faster when you are busy.
+    var rate: Double = 1
+
     /// Advances a decoded looping clip; call once per displayed frame.
     func tick(_ now: CFTimeInterval) {
         let slot = slots[active]
         guard let film = slot.film else { return }
-        let image = film.image(at: now - slot.filmStart)
+        slot.filmTime += max(0, min(0.25, now - slot.filmStart)) * rate
+        slot.filmStart = now
+        let image = film.image(at: slot.filmTime)
         guard image !== slot.shownFrame else { return }
         slot.shownFrame = image
         framesShown += 1
@@ -345,6 +354,7 @@ final class ClipStage: NSObject {
                 guard let self, self.token == current else { return }
                 next.film = film
                 next.filmStart = CACurrentMediaTime()
+                next.filmTime = 0
                 next.shownFrame = film.frames[0]
                 CATransaction.begin(); CATransaction.setDisableActions(true)
                 next.layer.contents = film.frames[0]

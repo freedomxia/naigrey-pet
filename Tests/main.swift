@@ -339,3 +339,18 @@ do {
     }
     print("PASS: every action is reachable through its links (at most \(longest) in between), and they all lead back to sitting")
 }
+
+// 陪你打字时，片段的播放速度跟着你的手速走——但要有上下限，不然慢下来会停住、快起来会糊。
+do {
+    assert(abs(TypingWatch.rate(forPace: 0) - 0.7) < 0.001, "没在敲的时候不能停住")
+    assert(abs(TypingWatch.rate(forPace: 3.5) - 1.005) < 0.01, "中等手速约等于原速")
+    assert(TypingWatch.rate(forPace: 12) <= 1.4, "再快也要有上限")
+    assert(TypingWatch.rate(forPace: 1) >= 0.7, "再慢也要有下限")
+    // 单调：敲得越快播得越快
+    let pace = stride(from: 0.0, through: 12.0, by: 0.5).map { TypingWatch.rate(forPace: $0) }
+    assert(zip(pace, pace.dropFirst()).allSatisfy { $0 <= $1 + 1e-9 }, "手速越快，播放速度不能反而变慢")
+    // 听歌的判定要有迟滞，系统提示音那种一秒的动静不能让它戴上耳机
+    assert(AudioWatch.starts >= 5 && AudioWatch.ends >= 3, "开始和结束都要有足够的迟滞")
+    assert(TypingWatch.starts >= 1 && TypingWatch.ends >= 1)
+    print("PASS: typing pace drives the clip speed within limits, and both watches have hysteresis")
+}
