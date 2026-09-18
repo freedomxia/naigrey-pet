@@ -1,0 +1,157 @@
+{
+  "sitHeight": 642.0,
+  "clips": [
+    {
+      "name": "wave",
+      "file": "wave.mov",
+      "duration": 2.75,
+      "size": [
+        608,
+        696
+      ],
+      "start": [
+        324.5,
+        682.0
+      ],
+      "end": [
+        323.1,
+        684.0
+      ]
+    },
+    {
+      "name": "play",
+      "file": "play.mov",
+      "duration": 4.4583,
+      "size": [
+        1078,
+        642
+      ],
+      "start": [
+        398.5,
+        628.0
+      ],
+      "end": [
+        609.7,
+        641.0
+      ],
+      "ballStart": [
+        725.9,
+        522.4
+      ],
+      "ballEnd": [
+        1029.7,
+        555.9
+      ],
+      "ballVelocity": [
+        414.6,
+        36.4
+      ]
+    },
+    {
+      "name": "walk",
+      "file": "walk.mov",
+      "duration": 0.9583,
+      "size": [
+        968,
+        688
+      ],
+      "start": [
+        442.8,
+        676.0
+      ],
+      "end": [
+        442.8,
+        676.0
+      ],
+      "loop": true,
+      "speed": 360.0
+    },
+    {
+      "name": "stretch",
+      "file": "stretch.mov",
+      "duration": 2.4583,
+      "size": [
+        952,
+        694
+      ],
+      "start": [
+        297.5,
+        680.0
+      ],
+      "end": [
+        331.0,
+        676.0
+      ]
+    },
+    {
+      "name": "yawn",
+      "file": "yawn.mov",
+      "duration": 2.375,
+      "size": [
+        854,
+        616
+      ],
+      "start": [
+        282.4,
+        604.0
+      ],
+      "end": [
+        298.0,
+        605.0
+      ]
+    },
+    {
+      "name": "lieDown",
+      "file": "lieDown.mov",
+      "duration": 1.1667,
+      "size": [
+        842,
+        590
+      ],
+      "start": [
+        280.0,
+        572.0
+      ],
+      "end": [
+        212.9,
+        578.0
+      ]
+    },
+    {
+      "name": "sleep",
+      "file": "sleep.mov",
+      "duration": 2.2083,
+      "size": [
+        750,
+        454
+      ],
+      "start": [
+        230.9,
+        440.0
+      ],
+      "end": [
+        232.9,
+        442.0
+      ],
+      "loop": true,
+      "pingPong": true
+    },
+    {
+      "name": "wake",
+      "file": "wake.mov",
+      "duration": 1.7083,
+      "size": [
+        784,
+        666
+      ],
+      "start": [
+        234.7,
+        650.0
+      ],
+      "end": [
+        340.3,
+        654.0
+      ]
+    }
+  ]
+}
