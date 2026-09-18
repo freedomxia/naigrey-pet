@@ -293,10 +293,15 @@ final class ClipStage: NSObject {
             if ProcessInfo.processInfo.environment["NAIGREY_CPULOG"] != nil {
                 NSLog("奶灰: %@ first frame %.0f ms after start", clip.name, (CACurrentMediaTime() - entered) * 1000)
             }
-            self.fade(next.layer, to: 1, duration: hadClip ? 0.08 : fadeIn)
+            // Never cross-dissolve: two half-transparent cats let the desktop through both of them, which
+            // reads as a flash. The new clip comes up over a picture that stays solid underneath, and what
+            // was there before is only taken away once the new one covers it.
+            self.fade(next.layer, to: 1, duration: ClipStage.coverIn, curve: .easeOut)
             if hadClip {
-                self.fade(previous.layer, to: 0, duration: 0.12)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if self.slots[self.active] !== previous { previous.clear() } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + ClipStage.coverIn + 0.03) {
+                    guard self.token == current, self.slots[self.active] !== previous else { return }
+                    previous.clear()
+                }
             }
             ready()
         }
@@ -372,13 +377,21 @@ final class ClipStage: NSObject {
         }
     }
 
+    /// Hand-off timing. The rule these encode: the drawn cat and the clip must never both be part
+    /// transparent at the same moment, because then the desktop shows through both and the cat appears to
+    /// flash. So the incoming picture is brought up to solid first, and only then is the old one taken away.
+    static let coverIn = 0.12     // the incoming clip fades up over this, ease-out
+    static let catHold = 0.08     // the drawn cat underneath stays solid at least this long
+    static let catOut = 0.06      // then it leaves, by which time the clip covers it
+    static let uncoverDelay = 0.06  // coming back, the cat is up this long before the clip starts leaving
+
     /// Fades the clip away; the window is cleared once it's invisible.
     func stop(fadeOut: Double = 0.2) {
         guard clip != nil else { return }
         token += 1
         let current = token
         clip = nil
-        for slot in slots { fade(slot.layer, to: 0, duration: fadeOut) }
+        for slot in slots { fade(slot.layer, to: 0, duration: fadeOut, curve: fadeOut > 0 ? .easeIn : nil) }
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeOut + 0.05) { [weak self] in
             guard let self, self.token == current else { return }
             self.slots.forEach { $0.clear() }
@@ -420,7 +433,7 @@ final class ClipStage: NSObject {
                 CGVector(dx: CGFloat(mirrored ? -v[0] : v[0]) * scale, dy: CGFloat(-v[1]) * scale))
     }
 
-    private func fade(_ layer: CALayer, to opacity: Float, duration: Double) {
+    private func fade(_ layer: CALayer, to opacity: Float, duration: Double, curve: CAMediaTimingFunctionName? = nil) {
         let from = layer.presentation()?.opacity ?? layer.opacity
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.opacity = opacity
@@ -430,6 +443,7 @@ final class ClipStage: NSObject {
         animation.fromValue = from
         animation.toValue = opacity
         animation.duration = duration
+        if let curve { animation.timingFunction = CAMediaTimingFunction(name: curve) }
         layer.add(animation, forKey: "fade")
     }
 }

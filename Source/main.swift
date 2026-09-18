@@ -926,7 +926,12 @@ final class PetController: NSObject, NSApplicationDelegate {
                    ready: { [weak self] in
                        guard let self else { return }
                        if self.demo { print(String(format: "t=%.1f clip %@ on screen", CACurrentMediaTime() - self.launched, name)); fflush(stdout) }
-                       self.petView.setCatVisible(false)
+                       // Hold the drawn cat until the clip has covered it, then take it away quickly. Fading
+                       // the two past each other would let the desktop show through both at once - a flash.
+                       DispatchQueue.main.asyncAfter(deadline: .now() + ClipStage.catHold) { [weak self] in
+                           guard let self, self.act != nil else { return }
+                           self.petView.setCatVisible(false, duration: ClipStage.catOut)
+                       }
                    },
                    ending: { [weak self] in self?.actEnding(name, then: next) })
         return true
@@ -951,8 +956,18 @@ final class PetController: NSObject, NSApplicationDelegate {
         if act == "play", let ball, !ball.panel.isVisible { ball.held = false; ball.show(above: panel) }
         act = nil
         videoWalking = false
-        stage.stop(fadeOut: fade)
-        petView.setCatVisible(true, duration: fade)
+        if fade > 0 {
+            // The drawn cat comes back up underneath the clip that is still covering it; only once it is
+            // there does the clip go away, so the picture is never see-through in between.
+            petView.setCatVisible(true, duration: ClipStage.uncoverDelay)
+            DispatchQueue.main.asyncAfter(deadline: .now() + ClipStage.uncoverDelay) { [weak self] in
+                guard let self, self.act == nil else { return }
+                self.stage?.stop(fadeOut: fade)
+            }
+        } else {
+            stage.stop(fadeOut: 0)
+            petView.setCatVisible(true, duration: 0)
+        }
     }
 
     /// Being picked up interrupts whatever the video cat was doing.

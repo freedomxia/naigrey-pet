@@ -52,7 +52,7 @@ Tools/release.command 3.0.4 "这次改了什么"
 | `Source/` | App 源码：素材切分、绑定与蒙版、Metal 渲染、动作行为、毛线球、视频片段、更新器 |
 | `Assets/clips/` | 抠好的透明动作片段（HEVC with alpha）和它们的元数据 |
 | `Tools/clips/` | 从绿幕视频里切片段的脚本 |
-| `Tools/clipcheck/`、`Tools/preview/` | 把片段和画出来的猫并排比对、离屏预览动画 |
+| `Tools/clipcheck/`、`Tools/preview/`、`Tools/fadecheck/` | 片段与画的猫并排比对、离屏预览动画、交接合成检查 |
 | `Tools/relkey/`、`Tools/release.command` | 发布签名密钥工具与发布流程 |
 | `验收记录.md` | 每个版本实测了什么、边界在哪 |
 

@@ -234,3 +234,51 @@ do {
     try? FileManager.default.removeItem(at: root)
     print("PASS: update swap replaces the bundle in place, cleans up staging, and quotes odd paths")
 }
+
+// The hand-off between the drawn cat and a video clip must never leave the picture see-through. They live in
+// two windows, so what reaches the screen is clip over cat over desktop: the desktop shows through both by
+// (1 - catOpacity) * (1 - clipOpacity). A plain cross-dissolve peaks at 25% there, which reads as a flash.
+do {
+    // Core Animation's ease curves, evaluated the same way the window server does.
+    func bezier(_ x: Double, _ c: (Double, Double, Double, Double)) -> Double {
+        func curve(_ t: Double, _ a: Double, _ b: Double) -> Double {
+            let mt = 1 - t
+            return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t
+        }
+        var t = x
+        for _ in 0..<8 {
+            let error = curve(t, c.0, c.2) - x
+            if abs(error) < 1e-5 { break }
+            let slope = (curve(t + 1e-4, c.0, c.2) - curve(t - 1e-4, c.0, c.2)) / 2e-4
+            if abs(slope) < 1e-6 { break }
+            t = min(1, max(0, t - error / slope))
+        }
+        return curve(t, c.1, c.3)
+    }
+    let easeOut = (0.0, 0.0, 0.58, 1.0), easeIn = (0.42, 0.0, 1.0, 1.0)
+    func ramp(_ time: Double, from start: Double, over length: Double, _ curve: (Double, Double, Double, Double)? = nil) -> Double {
+        let u = min(1, max(0, (time - start) / length))
+        return curve.map { bezier(u, $0) } ?? u
+    }
+    let fadeOut = 0.2
+    var worstIn = 0.0, worstOut = 0.0, worstDissolve = 0.0
+    for millisecond in 0...400 {
+        let t = Double(millisecond) / 1000
+        // Starting an action: the clip covers the cat, the cat only leaves once it is covered.
+        let clipUp = ramp(t, from: 0, over: ClipStage.coverIn, easeOut)
+        let catDown = 1 - ramp(t, from: ClipStage.catHold, over: ClipStage.catOut)
+        worstIn = max(worstIn, (1 - clipUp) * (1 - catDown))
+        // Ending one: the cat comes back underneath first, then the clip is taken away.
+        let catUp = ramp(t, from: 0, over: ClipStage.uncoverDelay)
+        let clipDown = 1 - ramp(t, from: ClipStage.uncoverDelay, over: fadeOut, easeIn)
+        worstOut = max(worstOut, (1 - catUp) * (1 - clipDown))
+        // What a straight cross-dissolve would have done, for comparison.
+        worstDissolve = max(worstDissolve, (1 - ramp(t, from: 0, over: fadeOut)) * ramp(t, from: 0, over: fadeOut))
+    }
+    assert(ClipStage.catHold + ClipStage.catOut >= ClipStage.coverIn, "The cat must still be there when the clip finishes covering it")
+    assert(worstIn < 0.02, "Entering an action must not show the desktop through the cat, got \(worstIn)")
+    assert(worstOut < 0.001, "Leaving an action must not show the desktop through the cat, got \(worstOut)")
+    assert(worstDissolve > 0.2, "A cross-dissolve really would have been see-through: \(worstDissolve)")
+    print(String(format: "PASS: clip hand-off never goes see-through (in %.1f%%, out %.1f%%; a cross-dissolve would hit %.0f%%)",
+                 worstIn * 100, worstOut * 100, worstDissolve * 100))
+}

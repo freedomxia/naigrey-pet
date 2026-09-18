@@ -1,12 +1,12 @@
 {
   "mac": {
-    "version": "3.0.4",
-    "build": 8,
-    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.0.4/naigrey-mac.zip",
-    "sha256": "e8afc610cf50caac50d35f241ffc90f421a98647109161bc321158a7d1fcb9e6",
-    "signature": "0PPRlAp2RfZbFn1uMWz+UtrXno1494Dj2NKOp55bsFA30b4KuR2yBNurVXBTBzEp0WN19IspaVIDAH/Ew9qpDQ==",
+    "version": "3.0.5",
+    "build": 9,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.0.5/naigrey-mac.zip",
+    "sha256": "a28168c87c635f7c1fb6bdbd85e7baf8bca4e3d0367bdd918d1961a811a7506b",
+    "signature": "z0SZQKSY2eElJ2RSYV+3szKX38o7LMNnwJD1WP2bng3aRT6tokIYZFeiR5k76HdHWkjBGDgpbe/dAU/GXZBlBw==",
     "minimumSystem": "13.0",
-    "notes": "更新器本身的小修补：测试不再写进真实备份目录",
+    "notes": "修掉换动作时猫会闪一下：交接改成先盖后撤，桌面透出从 25% 降到 1.7%",
     "date": "2026-09-18"
   },
   "windows": null
