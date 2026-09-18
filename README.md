@@ -1,6 +1,6 @@
 # 奶灰桌宠
 
-一只住在 macOS 桌面上的奶灰小猫。待机时是实时逐部位动画（看鼠标、眨眼、呼吸、被撸会眯眼），做动作时播放抠好的透明视频片段（招手、打哈欠、伸懒腰、走路、趴下睡觉、醒来、玩毛线球），并会跟着你用电脑的作息自己犯困、入睡、醒来和打招呼。
+一只住在 macOS 桌面上的奶灰小猫。待机时是实时逐部位动画（看鼠标、眨眼、呼吸、被撸会眯眼），做动作时播放抠好的透明视频片段（招手、打哈欠、伸懒腰、走路、趴下睡觉、醒来、玩毛线球），动作之间会起身、转身、坐下，像一镜到底，并会跟着你用电脑的作息自己犯困、入睡、醒来和打招呼。
 
 ![版本](https://img.shields.io/github/v/release/freedomxia/naigrey-pet)
 
@@ -52,7 +52,7 @@ Tools/release.command 3.0.4 "这次改了什么"
 | `Source/` | App 源码：素材切分、绑定与蒙版、Metal 渲染、动作行为、毛线球、视频片段、更新器 |
 | `Assets/clips/` | 抠好的透明动作片段（HEVC with alpha）和它们的元数据 |
 | `Tools/clips/` | 从绿幕视频里切片段的脚本 |
-| `Tools/clipcheck/`、`Tools/preview/`、`Tools/fadecheck/` | 片段与画的猫并排比对、离屏预览动画、交接合成检查 |
+| `Tools/clipcheck/`、`Tools/preview/`、`Tools/fadecheck/`、`Tools/joincheck/` | 片段与画的猫并排比对、离屏预览动画、交接合成检查、动作接缝检查 |
 | `Tools/relkey/`、`Tools/release.command` | 发布签名密钥工具与发布流程 |
 | `验收记录.md` | 每个版本实测了什么、边界在哪 |
 

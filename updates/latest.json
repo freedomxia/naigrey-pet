@@ -1,12 +1,12 @@
 {
   "mac": {
-    "version": "3.0.5",
-    "build": 9,
-    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.0.5/naigrey-mac.zip",
-    "sha256": "a28168c87c635f7c1fb6bdbd85e7baf8bca4e3d0367bdd918d1961a811a7506b",
-    "signature": "z0SZQKSY2eElJ2RSYV+3szKX38o7LMNnwJD1WP2bng3aRT6tokIYZFeiR5k76HdHWkjBGDgpbe/dAU/GXZBlBw==",
+    "version": "3.1.0",
+    "build": 10,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.1.0/naigrey-mac.zip",
+    "sha256": "e2976d56e6e01045a5bd62d5319bddeac3995bc8c9a8c24b3f2cd144183c3cea",
+    "signature": "x9lTrP4bTK9Dnlrur6ReoqvJ4voNGJcZNL68IWT222Hecw4uBjJj+V0WLJ6BoWgwghp7ylBcbcVLncg0O3M+Cg==",
     "minimumSystem": "13.0",
-    "notes": "修掉换动作时猫会闪一下：交接改成先盖后撤，桌面透出从 25% 降到 1.7%",
+    "notes": "动作之间加了起身、转身、坐下：要走路先站起来，走完停下坐回去，玩完球先爬起来再追，像一镜到底",
     "date": "2026-09-18"
   },
   "windows": null

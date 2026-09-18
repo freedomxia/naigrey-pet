@@ -1,6 +1,33 @@
 import AppKit
 import AVFoundation
 
+/// Which pose the cat is in between clips. The take the clips come from is continuous, so every action
+/// starts from one of these and leaves the cat in one of them; the links below are the moves in between.
+enum Posture { case sitting, standing, crouched, lying }
+
+extension ClipInfo {
+    /// The pose each clip starts from and leaves the cat in.
+    static let posture: [String: (from: Posture, to: Posture)] = [
+        "wave": (.sitting, .sitting), "yawn": (.sitting, .sitting), "play": (.sitting, .crouched),
+        "walk": (.standing, .standing), "stretch": (.standing, .sitting),
+        "lieDown": (.sitting, .lying), "sleep": (.lying, .lying), "wake": (.lying, .sitting),
+        "standUp": (.sitting, .standing), "sitDown": (.standing, .sitting), "getUp": (.crouched, .standing),
+    ]
+
+    /// The move that gets the cat from one pose to another, or nil when it is already there. From a crouch it
+    /// always gets up on its feet first; sitting down from there is a second step.
+    static func link(_ from: Posture, _ to: Posture) -> String? {
+        switch (from, to) {
+        case (.sitting, .standing): return "standUp"
+        case (.standing, .sitting): return "sitDown"
+        case (.crouched, _): return "getUp"
+        case (.lying, _): return "wake"
+        default: return nil
+        }
+    }
+}
+
+
 /// One cut from the green-screen video, keyed to transparent HEVC and cropped around the cat.
 /// Points are in the clip's pixels with y down; anchors mark the middle of the paws on the floor.
 struct ClipInfo: Decodable {

@@ -152,6 +152,57 @@
         340.3,
         654.0
       ]
+    },
+    {
+      "name": "standUp",
+      "file": "standUp.mov",
+      "duration": 0.7917,
+      "size": [
+        952,
+        692
+      ],
+      "start": [
+        329.0,
+        676.0
+      ],
+      "end": [
+        360.5,
+        680.0
+      ]
+    },
+    {
+      "name": "sitDown",
+      "file": "sitDown.mov",
+      "duration": 0.7917,
+      "size": [
+        952,
+        692
+      ],
+      "start": [
+        360.5,
+        680.0
+      ],
+      "end": [
+        329.0,
+        676.0
+      ]
+    },
+    {
+      "name": "getUp",
+      "file": "getUp.mov",
+      "duration": 2.6667,
+      "size": [
+        1138,
+        720
+      ],
+      "start": [
+        668.6,
+        719.0
+      ],
+      "end": [
+        438.8,
+        676.0
+      ]
     }
   ]
 }

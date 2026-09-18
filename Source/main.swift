@@ -625,6 +625,13 @@ final class PetController: NSObject, NSApplicationDelegate {
     /// Whether the cat means to be walking right now; it still pauses on its own to look around.
     var wantsToWalk: Bool { pose == .walk && (roaming || play == .chase) && !sleeping && !dragging }
 
+    /// Which pose the video cat is in. The drawn cat is always a sitting cat, so whenever it is the one on
+    /// screen the pose is `.sitting`.
+    var posture: Posture = .sitting
+    /// Set when an action ends mid-ball-game: the cat stays on its feet on the last frame instead of sitting
+    /// down, because chasing the ball is probably the next thing it will do.
+    var holdingStand = false
+
     enum Play { case off, watch, chase, windup, swat }
     var ball: YarnBall?
     var play: Play = .off {
@@ -766,7 +773,8 @@ final class PetController: NSObject, NSApplicationDelegate {
                 nextAction = now + Double.random(in: 8...16)
                 chooseSomethingToDo()
             }
-            if act == "walk" && now >= actUntil { endAct() }
+            if act == "walk" && now >= actUntil { settle() }
+            if holdingStand && play == .off { settle() }
             if pose == .idle && act == nil && cat.pettingLevel > 0.8 && now - lastPurr > 7 { lastPurr = now; say("呼噜呼噜…", for: 2) }
             if sleeping && now >= nextPuff { petView.puffZ(); nextPuff = now + 1.4 }
             if let napUntil, sleeping, now >= napUntil { self.napUntil = nil; wakeUp(nil) }
@@ -844,7 +852,7 @@ final class PetController: NSObject, NSApplicationDelegate {
     func stopPlaying() {
         play = .off
         cat.chasing = false
-        if act == "walk" { endAct() }
+        if act == "walk" || holdingStand { holdingStand = false; settle() }
         if let ball, ball.panel.isVisible == false, act != "play" { ball.held = false; ball.show(above: panel) }
         if pose == .walk || pose == .wave { pose = .idle }
     }
@@ -921,6 +929,10 @@ final class PetController: NSObject, NSApplicationDelegate {
         if pose != .idle { pose = .idle }
         let anchor = stage.isPlaying ? (stage.endAnchor ?? pawAnchor()) : pawAnchor()
         act = name
+        posture = ClipInfo.posture[name]?.to ?? .sitting
+        holdingStand = false
+        videoWalking = name == "walk"
+        if videoWalking { walkSpeedPoints = CGFloat(clip.speed ?? 0) * clipScale }
         actUntil = clip.loop == true ? CACurrentMediaTime() + (loopFor ?? .infinity) : .infinity
         stage.play(clip, anchor: anchor, scale: clipScale, mirrored: mirrored, above: panel,
                    ready: { [weak self] in
@@ -937,10 +949,37 @@ final class PetController: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Plays an action, first playing whatever move gets the cat from the pose it is in now into the one the
+    /// action starts from. This is what makes it get up and go instead of jumping straight into a walk.
+    @discardableResult
+    func begin(_ name: String, mirrored: Bool = false, loopFor: Double? = nil, then next: (() -> Void)? = nil) -> Bool {
+        guard let needs = ClipInfo.posture[name]?.from, needs != posture,
+              let bridge = ClipInfo.link(posture, needs), bridge != name, library?[bridge] != nil else {
+            return perform(name, mirrored: mirrored, loopFor: loopFor, then: next)
+        }
+        // The link keeps the direction the action will be played in, so the cat turns before it moves.
+        return perform(bridge, mirrored: mirrored) { [weak self] in
+            self?.begin(name, mirrored: mirrored, loopFor: loopFor, then: next)
+        }
+    }
+
     private func actEnding(_ name: String, then next: (() -> Void)?) {
         guard act == name else { return }
         next?()
-        if act == name { endAct() }
+        if act == name { settle() }
+    }
+
+    /// Hands back to the drawn cat once an action is over - but a drawn cat is a *sitting* cat, so anything
+    /// else gets the move back to sitting first. Mid-ball-game the cat stays standing instead: it is about to
+    /// run after the ball again, and sitting down in between looks like a twitch.
+    func settle() {
+        guard act != nil else { return }
+        if play != .off, posture == .standing { holdingStand = true; return }
+        if posture != .sitting, let bridge = ClipInfo.link(posture, .sitting), library?[bridge] != nil {
+            _ = perform(bridge, mirrored: stage?.mirrored ?? false)
+            return
+        }
+        endAct()
     }
 
     /// Brings the drawn cat back where the video cat is standing and fades the clip out.
@@ -956,6 +995,8 @@ final class PetController: NSObject, NSApplicationDelegate {
         if act == "play", let ball, !ball.panel.isVisible { ball.held = false; ball.show(above: panel) }
         act = nil
         videoWalking = false
+        posture = .sitting
+        holdingStand = false
         if fade > 0 {
             // The drawn cat comes back up underneath the clip that is still covering it; only once it is
             // there does the clip go away, so the picture is never see-through in between.
@@ -976,18 +1017,16 @@ final class PetController: NSObject, NSApplicationDelegate {
         if sleeping { sleeping = false; autoSlept = false; napUntil = nil; pose = .idle; refreshMenu() }
     }
 
-    func doYawn() { if !perform("yawn") { _ = cat.yawn() } }
-    func doStretch() { if !perform("stretch") { petView.crouch(duration: 0.8) } }
+    func doYawn() { if !begin("yawn") { _ = cat.yawn() } }
+    func doStretch() { if !begin("stretch") { petView.crouch(duration: 0.8) } }
     @objc func stretchNow() { if sleeping { wakeUp(nil) }; if act == nil { doStretch() } }
     @objc func yawnNow() { if sleeping { wakeUp(nil) }; if act == nil { doYawn() } }
 
     func startWalk(duration: Double, toward x: CGFloat? = nil) {
         direction = x.map { $0 > pawAnchor().x ? 1 : -1 } ?? (Bool.random() ? -1 : 1)
-        guard let clip = library?["walk"], perform("walk", mirrored: direction > 0, loopFor: duration) else {
+        guard begin("walk", mirrored: direction > 0, loopFor: duration) else {
             setPose(.walk, duration: duration); return
         }
-        videoWalking = true
-        walkSpeedPoints = CGFloat(clip.speed ?? 0) * clipScale
         setWalking(true)
     }
 
@@ -1000,11 +1039,10 @@ final class PetController: NSObject, NSApplicationDelegate {
     func fallAsleep(auto: Bool, nap: Double? = nil) {
         guard !sleeping else { return }
         if play != .off { stopPlaying() }
-        if act != nil { endAct(fade: 0.1) }
         sleeping = true
         autoSlept = auto
         napUntil = nap.map { CACurrentMediaTime() + $0 }
-        if !perform("lieDown", then: { [weak self] in self?.perform("sleep") }) { pose = .sleep }
+        if !begin("lieDown", then: { [weak self] in self?.begin("sleep") }) { pose = .sleep }
         nextPuff = CACurrentMediaTime() + 1.6
         refreshMenu()
     }
@@ -1015,7 +1053,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         autoSlept = false
         napUntil = nil
         if act == "sleep" || act == "lieDown" {
-            if !perform("wake") { endAct() }
+            if !begin("wake") { endAct() }
         } else {
             pose = .idle
         }
@@ -1128,7 +1166,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         let reach = CGFloat(abs((clip.ballStart?[0] ?? clip.start[0] + 250) - clip.start[0])) * clipScale
         switch play {
         case .watch:
-            guard act == nil, now >= playUntil, !ball.held, ball.speed < 90 else { return }
+            guard act == nil || holdingStand, now >= playUntil, !ball.held, ball.speed < 90 else { return }
             if abs(abs(dx) - reach) < reach * 0.45 {
                 play = .windup; playUntil = now + 0.45; petView.crouch(duration: 0.45)
             } else {
@@ -1138,31 +1176,51 @@ final class PetController: NSObject, NSApplicationDelegate {
         case .chase:
             let goal = ball.center.x - side * reach
             let heading: CGFloat = goal > paw.x ? 1 : -1
-            if ball.held || ball.speed > 400 || act != "walk" {
-                if act == "walk" { endAct() }
+            if ball.held || ball.speed > 400 || !(act == "walk" || act == "standUp") {
+                if act == "walk" { settle() }
                 play = .watch; playUntil = now + 0.5
             } else if abs(goal - paw.x) < reach * 0.25 || heading != direction {
-                endAct(); play = .watch; playUntil = now + 0.35
+                settle(); play = .watch; playUntil = now + 0.35
             }
         case .windup:
             guard now >= playUntil else { return }
             play = .swat
             ball.held = true
-            let started = perform("play", mirrored: side < 0, then: { [weak self] in self?.releaseBall() })
+            let started = begin("play", mirrored: side < 0, then: { [weak self] in
+                self?.releaseBall()
+                self?.begin("getUp", mirrored: side < 0)   // up on its feet, ready to run after the ball
+            })
             if started {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { ball.panel.orderOut(nil) }
+                // The cat may have to sit down first, so wait for the clip with the ball in it to really be
+                // on screen before taking the real ball away - otherwise it blinks out early.
+                hideBallForSwat(ball, until: now + 4)
             } else {
                 ball.held = false
                 ball.kick(CGVector(dx: side * 260, dy: 200))
                 play = .watch; playUntil = now + 1
             }
         case .swat:
-            guard act != "play" else { return }
+            // The swat runs until the cat is back on its feet and idle again.
+            guard act == nil || holdingStand else { return }
             // Interrupted before the hand-off (picked up, woken): put the real ball back where it was.
             if !ball.panel.isVisible { ball.held = false; ball.show(above: panel) }
             play = .watch; playUntil = now + Double.random(in: 0.6...1.2)
         case .off:
             break
+        }
+    }
+
+    /// Swaps the real ball for the one in the video, once that clip is actually the picture on screen.
+    private func hideBallForSwat(_ ball: YarnBall, until deadline: TimeInterval) {
+        guard play == .swat, CACurrentMediaTime() < deadline else { return }
+        guard act == "play" else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in self?.hideBallForSwat(ball, until: deadline) }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self, self.act == "play" else { return }
+            if self.demo { print(String(format: "t=%.1f 收起真球（视频里的球接手）", CACurrentMediaTime() - self.launched)); fflush(stdout) }
+            ball.panel.orderOut(nil)
         }
     }
 

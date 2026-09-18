@@ -282,3 +282,50 @@ do {
     print(String(format: "PASS: clip hand-off never goes see-through (in %.1f%%, out %.1f%%; a cross-dissolve would hit %.0f%%)",
                  worstIn * 100, worstOut * 100, worstDissolve * 100))
 }
+
+// One continuous take: every action must be reachable from the pose the cat is actually in, by playing the
+// moves in between. A missing link is what makes the cat jump from sitting straight into a walk.
+do {
+    let directory = URL(fileURLWithPath: "Assets/clips")
+    guard let library = ClipLibrary.load(from: directory) else { fatalError("Assets/clips/clips.json missing") }
+    for clip in library.clips {
+        assert(ClipInfo.posture[clip.name] != nil, "\(clip.name) has no pose recorded, so nothing knows how to get into it")
+    }
+    // From any pose, playing links must reach the pose an action starts from - and must get there.
+    let poses: [Posture] = [.sitting, .standing, .crouched, .lying]
+    var longest = 0
+    for start in poses {
+        for clip in library.clips {
+            guard let needs = ClipInfo.posture[clip.name]?.from else { continue }
+            var here = start, steps = 0
+            while here != needs {
+                guard let bridge = ClipInfo.link(here, needs), bridge != clip.name else { break }
+                assert(library[bridge] != nil, "link \(bridge) is missing from the clips")
+                guard let after = ClipInfo.posture[bridge]?.to else { assertionFailure("link \(bridge) has no pose"); break }
+                assert(after != here, "link \(bridge) would not move the cat anywhere")
+                here = after
+                steps += 1
+                assert(steps <= 3, "getting from \(start) into \(clip.name) never settles")
+            }
+            longest = max(longest, steps)
+        }
+    }
+    // Ending an action always has to get back to sitting, because a drawn cat is a sitting cat.
+    for start in poses where start != .sitting {
+        var here = start, steps = 0
+        while here != .sitting, let bridge = ClipInfo.link(here, .sitting), let after = ClipInfo.posture[bridge]?.to {
+            assert(library[bridge] != nil, "link \(bridge) is missing")
+            here = after; steps += 1
+            assert(steps <= 3, "\(start) never gets back to sitting")
+        }
+        assert(here == .sitting, "\(start) has no way back to a sitting cat")
+    }
+    // The joins themselves: a link must hand over at the pose the next clip starts from, and its own anchors
+    // must be the mirror of the move back, or the cat would shift sideways when it stands up and sits down.
+    let up = library["standUp"]!, down = library["sitDown"]!
+    assert(abs(up.start[0] - down.end[0]) < 0.01 && abs(up.end[0] - down.start[0]) < 0.01, "standing up and sitting down must be the same move both ways")
+    let getUp = library["getUp"]!, walk = library["walk"]!
+    assert(abs(getUp.size[1] - 720) < 1 && getUp.duration > 2, "getting up runs into the walk, so it carries the turn as well")
+    assert(walk.loop == true && walk.speed != nil)
+    print("PASS: every action is reachable through its links (at most \(longest) in between), and they all lead back to sitting")
+}

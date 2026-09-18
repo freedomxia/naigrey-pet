@@ -21,16 +21,24 @@ WALK_DRIFT = 0.381
 WALK_SPEED = 15.0 * 24
 W, H, FPS = 1280, 720, 24
 
-# name, start s, end s, loop?
+# The master is one continuous take: sit, wave, play with the ball, get up, walk, stretch, sit, yawn, lie
+# down, sleep, wake, sit. The actions below are cut from it, and so are the moves *between* them, so the pet
+# can get up and settle back down instead of jumping from one pose to another.
+# name, start s, end s, loop?, play backwards?
 CLIPS = [
-    ("wave", 6.0, 8.7, False),
-    ("play", 9.75, 14.15, False),
-    ("walk", 404 / 24, 427 / 24, True),
-    ("stretch", 19.6, 22.0, False),
-    ("yawn", 22.25, 24.6, False),
-    ("lieDown", 24.6, 25.7, False),
-    ("sleep", 25.7, 27.9, True),
-    ("wake", 27.9, 29.6, False),
+    ("wave", 6.0, 8.7, False, False),
+    ("play", 9.75, 14.15, False, False),
+    ("walk", 404 / 24, 427 / 24, True, False),
+    ("stretch", 19.6, 22.0, False, False),
+    ("yawn", 22.25, 24.6, False, False),
+    ("lieDown", 24.6, 25.7, False, False),
+    ("sleep", 25.7, 27.9, True, False),
+    ("wake", 27.9, 29.6, False, False),
+    # Links. The cat never stands up from sitting anywhere in the take, so that one is the sit played
+    # backwards - a slow, deliberate move that reads the same either way.
+    ("standUp", 21.3, 22.04, False, True),
+    ("sitDown", 21.3, 22.04, False, False),
+    ("getUp", 14.2, 404 / 24, False, False),   # ends on the frame the walk loop starts from, so it flows straight in
 ]
 
 print("reading master…", flush=True)
@@ -81,7 +89,7 @@ print("sitting height", sit_height)
 library = {"sitHeight": sit_height, "clips": []}
 tmp = tempfile.mkdtemp(prefix="naigrey-clips-")
 os.makedirs(out, exist_ok=True)
-for name, t0, t1, loop in CLIPS:
+for name, t0, t1, loop, backwards in CLIPS:
     f0, f1 = frame(t0), frame(t1)
     if only and name not in only:
         continue
@@ -106,9 +114,10 @@ for name, t0, t1, loop in CLIPS:
     cw, ch = (x1 - x0) + (x1 - x0) % 2, (y1 - y0) + (y1 - y0) % 2
     x0 = max(0, min(x0, int(W - cw - drift * (f1 - f0)))); y0 = min(y0, H - ch)
     last = f1 - 1 if loop else f1
+    first, final = (last, f0) if backwards else (f0, last)   # played backwards, the last frame is what you see first
     clip = dict(name=name, file=f"{name}.mov", duration=round((last - f0 + 1) / FPS, 4), size=[cw, ch],
-                start=[round(info[f0]["anchor"][0] - x0, 1), round(info[f0]["anchor"][1] - y0, 1)],
-                end=[round(info[last]["anchor"][0] - x0, 1), round(info[last]["anchor"][1] - y0, 1)])
+                start=[round(info[first]["anchor"][0] - x0, 1), round(info[first]["anchor"][1] - y0, 1)],
+                end=[round(info[final]["anchor"][0] - x0, 1), round(info[final]["anchor"][1] - y0, 1)])
     if loop: clip["loop"] = True
     if name == "sleep": clip["pingPong"] = True  # breathing reads the same played backwards, so the loop is seamless
     if name == "walk":
@@ -127,7 +136,8 @@ for name, t0, t1, loop in CLIPS:
     count = (f1 - f0) if loop else (f1 - f0 + 1)
     prores = os.path.join(tmp, f"{name}.mov")
     crop_x = f"'{x0}+{drift}*n'" if drift else str(x0)
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", master, "-vf", f"select='between(n\\,{f0}\\,{f0 + count - 1})',setpts=N/{FPS}/TB,crop={cw}:{ch}:{crop_x}:{y0}",
+    steps = f"select='between(n\\,{f0}\\,{f0 + count - 1})',setpts=N/{FPS}/TB,crop={cw}:{ch}:{crop_x}:{y0}" + (",reverse" if backwards else "")
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", master, "-vf", steps,
                     "-frames:v", str(count), "-r", str(FPS), "-an", "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-alpha_bits", "16", prores], check=True)
     target = os.path.join(out, f"{name}.mov")
     if os.path.exists(target): os.remove(target)
@@ -137,8 +147,10 @@ for name, t0, t1, loop in CLIPS:
 
 path = os.path.join(out, "clips.json")
 if only and os.path.exists(path):
+    # Keep the clips this run did not touch, replace the ones it re-cut, and add any that are new.
     previous = json.load(open(path))
     cut = {c["name"]: c for c in library["clips"]}
-    library["clips"] = [cut.get(c["name"], c) for c in previous["clips"]]
+    merged = [cut.pop(c["name"], c) for c in previous["clips"]]
+    library["clips"] = merged + [c for c in library["clips"] if c["name"] in cut]
 json.dump(library, open(path, "w"), ensure_ascii=False, indent=2)
 print("wrote", os.path.join(out, "clips.json"))
