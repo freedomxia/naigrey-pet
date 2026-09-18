@@ -1,6 +1,6 @@
 """把纯绿背景的视频抠成带透明通道的 ProRes 4444 母版。
 
-    python3 Tools/key/key.py 输入.mp4 输出-透明.mov
+    python3 Tools/key/key.py 输入.mp4 输出-透明.mov [校色参考图.png]
 
 针对平整绿幕：背景色从画面四边自动取样，用「绿色过量」求透明度，再按背景反推边缘的真实颜色
 （不这么做，毛发边缘会留下一圈暗绿，看起来像黑边），然后去绿返色、清掉零散杂点、补上身体内部
@@ -10,6 +10,7 @@ import subprocess, sys, os
 import numpy as np
 
 src, dst = sys.argv[1], sys.argv[2]
+match = sys.argv[3] if len(sys.argv) > 3 else None
 probe = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
 # 分辨率从第一帧的字节数反推不了，直接让 ffmpeg 告诉我们
 info = subprocess.run(["ffmpeg", "-i", src], capture_output=True).stderr.decode()
@@ -29,6 +30,27 @@ def borders(frame):
     return np.concatenate([frame[:12].reshape(-1, 3), frame[-12:].reshape(-1, 3),
                            frame[:, :12].reshape(-1, 3), frame[:, -12:].reshape(-1, 3)])
 
+def fur_tone(rgb, opaque):
+    """猫身上中灰毛的平均颜色——生成视频常常一段里慢慢变暗或偏色，这是最稳的参照物。"""
+    lum = 0.3 * rgb[..., 0] + 0.59 * rgb[..., 1] + 0.11 * rgb[..., 2]
+    grey = opaque & (lum > 90) & (lum < 165)
+    if grey.sum() < 2000: return None
+    return np.array([rgb[..., c][grey].mean() for c in range(3)])
+
+reference_tone = None
+if match:
+    from PIL import Image
+    ref = np.array(Image.open(match).convert("RGBA")).astype(np.float32)
+    transparent = (ref[..., 3] < 20).sum()
+    if transparent > ref.shape[0] * ref.shape[1] * 0.02:      # 真的带透明通道的抠图
+        opaque = ref[..., 3] > 250
+    else:                                   # 没有透明通道：按绿幕判断，否则会把背景当成毛色
+        g2 = ref[..., 1] - np.maximum(ref[..., 0], ref[..., 2])
+        opaque = g2 < 20
+    reference_tone = fur_tone(ref[..., :3], opaque)
+    print("校色基准（灰毛）", reference_tone.round(1))
+
+gamma = np.ones(3, np.float32)
 background = None
 count = 0
 while True:
@@ -62,6 +84,13 @@ while True:
     neighbours[1:-1, 1:-1] = (a[:-2, 1:-1] + a[2:, 1:-1] + a[1:-1, :-2] + a[1:-1, 2:]) / 4
     a = np.where((a < 0.3) & (neighbours < 0.15), 0, a)
     a = np.where(neighbours > 0.92, np.maximum(a, neighbours), a)   # 补身体内部的洞
+    if reference_tone is not None:
+        tone = fur_tone(fg, a > 0.98)
+        if tone is not None:
+            # 用伽马而不是直接增益：把中灰毛拉回基准，白毛几乎不动，不会过曝
+            want = np.clip(np.log(np.clip(reference_tone, 1, 254) / 255) / np.log(np.clip(tone, 1, 254) / 255), 0.78, 1.28)
+            gamma = gamma * 0.72 + want * 0.28 if count else want     # 逐帧平滑，避免一帧一个颜色
+        fg = np.clip(255 * (np.clip(fg, 0, 255) / 255) ** gamma[None, None, :], 0, 255)
     out = np.dstack([fg, a * 255]).astype(np.uint8)
     writer.stdin.write(out.tobytes())
     count += 1
