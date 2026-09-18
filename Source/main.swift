@@ -518,19 +518,21 @@ final class PetView: NSView {
     func showBubble(_ text: String, for seconds: Double) {
         guard let layout else { return }
         let font = NSFont.systemFont(ofSize: layout.fontSize, weight: .medium)
-        let textSize = (text as NSString).size(withAttributes: [.font: font])
         let pad = layout.fontSize * 0.75
-        let size = CGSize(width: ceil(textSize.width + pad * 2), height: ceil(textSize.height + pad * 0.7))
+        let maxTextWidth = max(40, bounds.width - pad * 2 - 12)
+        let textSize = (text as NSString).boundingRect(with: CGSize(width: maxTextWidth, height: 300), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font]).size
+        let size = CGSize(width: min(bounds.width - 12, ceil(textSize.width + pad * 2)), height: ceil(textSize.height + pad * 0.7))
         let top = layout.rect(pose, mirrored: mirrored).maxY
         still {
             bubble.bounds = CGRect(origin: .zero, size: size)
-            bubble.cornerRadius = size.height / 2
-            bubble.shadowPath = CGPath(roundedRect: bubble.bounds, cornerWidth: size.height / 2, cornerHeight: size.height / 2, transform: nil)
+            bubble.cornerRadius = min(14, size.height / 2)
+            bubble.shadowPath = CGPath(roundedRect: bubble.bounds, cornerWidth: min(14, size.height / 2), cornerHeight: min(14, size.height / 2), transform: nil)
             bubble.position = CGPoint(x: bounds.width / 2, y: min(bounds.height - size.height - 1, top + 3))
             bubbleText.string = text
             bubbleText.font = font
             bubbleText.fontSize = layout.fontSize
-            bubbleText.frame = CGRect(x: 0, y: (size.height - ceil(textSize.height)) / 2, width: size.width, height: ceil(textSize.height))
+            bubbleText.isWrapped = true
+            bubbleText.frame = CGRect(x: pad, y: (size.height - ceil(textSize.height)) / 2, width: size.width - pad * 2, height: ceil(textSize.height))
             bubble.opacity = 1
         }
         bubble.removeAllAnimations()
@@ -593,6 +595,8 @@ final class PetView: NSView {
 final class PetController: NSObject, NSApplicationDelegate {
     let sprites: Sprites
     let defaults = UserDefaults.standard
+    var aiCompanion: AICompanionService?
+    var aiBadge: NSButton?
     var panel: PetPanel!
     var petView: PetView!
     var statusItem: NSStatusItem!
@@ -708,7 +712,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         PetLayout(catHeight: petSize, frameSizes: sprites.frames.map { CGSize(width: $0.width, height: $0.height) })
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let others = NSRunningApplication.runningApplications(withBundleIdentifier: "local.naigrey.desktop-pet").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.naigrey.desktop-pet").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         if !others.isEmpty { NSApp.terminate(nil); return }
         // 1.0 stored a much larger window size plus the settings its acceptance run left behind; start 1.1 fresh.
         let upgrading = defaults.object(forKey: "catSize") == nil && defaults.object(forKey: "size") != nil
@@ -717,6 +721,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         roaming = defaults.object(forKey: "roaming") == nil ? true : defaults.bool(forKey: "roaming")
         routineOn = defaults.object(forKey: "routine") == nil ? true : defaults.bool(forKey: "routine")
         companyOn = defaults.object(forKey: "company") == nil ? true : defaults.bool(forKey: "company")
+        if CommandLine.arguments.contains("--ai-demo") { companyOn = false; routineOn = false; roaming = false }
         if let directory = Bundle.main.resourceURL?.appendingPathComponent("clips"), let clips = ClipLibrary.load(from: directory) {
             library = clips
             stage = ClipStage(directory: directory)
@@ -754,6 +759,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "cat.fill", accessibilityDescription: "奶灰桌宠") ?? NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "奶灰桌宠")
         statusItem.button?.toolTip = "奶灰 · 点击管理桌宠"
         refreshMenu()
+        setupAICompanion()
         launched = CACurrentMediaTime()
         nextAction = demo ? .infinity : launched + 5
         say("你好，我是奶灰 ♡", for: 4)
@@ -767,7 +773,37 @@ final class PetController: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(screenLocked), name: .init("com.apple.screenIsLocked"), object: nil)
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(screenUnlocked), name: .init("com.apple.screenIsUnlocked"), object: nil)
     }
-    func applicationWillTerminate(_ notification: Notification) { save(); timer?.invalidate(); setWalking(false); petView?.stopClock(); ball?.close() }
+    func applicationWillTerminate(_ notification: Notification) { aiCompanion?.stop(); guard panel != nil else { return }; save(); timer?.invalidate(); setWalking(false); petView?.stopClock(); ball?.close() }
+    @MainActor func setupAICompanion() {
+        let service = AICompanionService(demo: CommandLine.arguments.contains("--ai-demo"))
+        aiCompanion = service
+        let badge = NSButton(title: "AI", target: self, action: #selector(showAIStatus))
+        badge.bezelStyle = .rounded; badge.controlSize = .small
+        badge.frame = NSRect(x: 8, y: 8, width: 36, height: 24)
+        badge.setAccessibilityLabel("AI 额度与任务，有新提醒")
+        badge.isHidden = true; petView.addSubview(badge); aiBadge = badge
+        service.onChange = { [weak self, weak service] in
+            guard let self, let service else { return }
+            self.aiBadge?.isHidden = service.unread == 0 && !service.sessions.contains(where: { ["waiting", "busy"].contains($0.state) })
+            self.aiBadge?.title = service.sessions.contains(where: { $0.state == "busy" }) ? "AI⋯" : "AI"
+            self.aiBadge?.toolTip = "AI 额度与任务 · \(service.unread) 条未读"
+        }
+        service.present = { [weak self, weak service] event in
+            guard let self, self.panel.isVisible, !self.dragging, !self.sleeping,
+                  self.pose == .idle, self.act == nil else { return false }
+            self.say(event.title + "\n" + event.body, for: event.priority == 0 ? 8 : 6)
+            // Keep the approved idle rig. Only a short built-in blink is permitted.
+            if service?.settings.motion == true { _ = self.cat.meow() }
+            return true
+        }
+        service.canUseSystemNotification = { [weak self] in self?.panel.isVisible == false }
+        service.start()
+        if CommandLine.arguments.contains("--ai-panel") || service.demo {
+            DispatchQueue.main.async { service.showPanel() }
+        }
+    }
+    @MainActor @objc func showAIStatus() { aiCompanion?.showPanel() }
+    @MainActor @objc func refreshAIUsage() { aiCompanion?.refreshAll() }
     func save() {
         defaults.set(Double(petSize), forKey: "catSize"); defaults.set(roaming, forKey: "roaming"); defaults.set(routineOn, forKey: "routine")
         defaults.set(panel.frame.minX, forKey: "x"); defaults.set(panel.frame.minY, forKey: "y")
@@ -806,7 +842,8 @@ final class PetController: NSObject, NSApplicationDelegate {
         // Let the surrounding desktop receive clicks; only the cat's visible pixels are interactive.
         let mouse = NSEvent.mouseLocation
         let local = NSPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
-        let passThrough = !dragging && !hitCat(local)
+        let overAIBadge = aiBadge.map { !$0.isHidden && $0.frame.contains(local) } ?? false
+        let passThrough = !dragging && !hitCat(local) && !overAIBadge
         if panel.ignoresMouseEvents != passThrough { panel.ignoresMouseEvents = passThrough }
         if let ball {
             let ballThrough = !ball.held && !ball.contains(screenPoint: mouse)
@@ -1443,7 +1480,7 @@ final class PetController: NSObject, NSApplicationDelegate {
     @objc func checkForUpdates() { startUpdateCheck(manual: true) }
 
     func startUpdateCheck(manual: Bool) {
-        guard !updateBusy else { return }
+        guard !(Bundle.main.bundleIdentifier?.hasSuffix(".ai-preview") ?? false), !updateBusy else { return }
         updateBusy = true
         if manual { say("我看看有没有新衣服…", for: 2) }
         refreshMenu()
@@ -1533,6 +1570,8 @@ final class PetController: NSObject, NSApplicationDelegate {
         let rhythm = add("跟着我的作息", #selector(toggleRoutine)); rhythm.state = routineOn ? .on : .off
         let keepCompany = add("陪我打字 / 听歌", #selector(toggleCompany)); keepCompany.state = companyOn ? .on : .off
         let sizes = NSMenuItem(title: "猫咪大小", action: nil, keyEquivalent: "")
+        _ = add("AI 额度与任务…", #selector(showAIStatus))
+        _ = add("刷新 AI 额度", #selector(refreshAIUsage))
         let submenu = NSMenu()
         for (name, size) in PetLayout.sizes {
             let item = NSMenuItem(title: name, action: #selector(resize(_:)), keyEquivalent: ""); item.target = self; item.tag = Int(size)
@@ -1547,7 +1586,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         } else if let pending = pendingUpdate {
             _ = add("换上新衣服 · \(pending.version)", #selector(installUpdate))
         } else {
-            _ = add("检查更新…", #selector(checkForUpdates))
+            let update = add("检查更新…", #selector(checkForUpdates)); update.isEnabled = !(Bundle.main.bundleIdentifier?.hasSuffix(".ai-preview") ?? false)
         }
         let help = NSMenuItem(title: "单击招手 · 双击睡觉 · 拖动搬家 · 头上划一划是撸猫", action: nil, keyEquivalent: ""); help.isEnabled = false; menu.addItem(help)
         _ = add("退出奶灰", #selector(quit))
