@@ -48,9 +48,10 @@ func frame(_ name: String, last: Bool) throws -> CGImage {
 
 // Each join: what is leaving, what is arriving.
 let joins = [("坐着的猫", "standUp"), ("standUp", "walk"), ("walk", "sitDown"), ("sitDown", "坐着的猫"),
-             ("standUp", "stretch"), ("stretch", "坐着的猫"), ("play", "getUp"), ("getUp", "walk")]
+             ("坐着的猫", "wave"), ("wave", "坐着的猫"), ("坐着的猫", "lieDown"), ("lieDown", "sleep"),
+             ("sleep", "wake"), ("wake", "坐着的猫"), ("坐着的猫", "play"), ("play", "坐着的猫")]
 
-let cellW: CGFloat = 210, cellH: CGFloat = 200, labelW: CGFloat = 132
+let cellW: CGFloat = 190, cellH: CGFloat = 170, labelW: CGFloat = 132
 let W = Int((labelW + cellW * 3) * backing), H = Int(cellH * CGFloat(joins.count) * backing)
 let canvas = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

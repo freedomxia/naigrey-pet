@@ -3,15 +3,15 @@ import AVFoundation
 
 /// Which pose the cat is in between clips. The take the clips come from is continuous, so every action
 /// starts from one of these and leaves the cat in one of them; the links below are the moves in between.
-enum Posture { case sitting, standing, crouched, lying }
+enum Posture { case sitting, standing, lying }
 
 extension ClipInfo {
     /// The pose each clip starts from and leaves the cat in.
     static let posture: [String: (from: Posture, to: Posture)] = [
-        "wave": (.sitting, .sitting), "yawn": (.sitting, .sitting), "play": (.sitting, .crouched),
-        "walk": (.standing, .standing), "stretch": (.standing, .sitting),
+        "wave": (.sitting, .sitting), "yawn": (.sitting, .sitting), "play": (.sitting, .sitting),
+        "stretch": (.sitting, .sitting), "walk": (.standing, .standing),
         "lieDown": (.sitting, .lying), "sleep": (.lying, .lying), "wake": (.lying, .sitting),
-        "standUp": (.sitting, .standing), "sitDown": (.standing, .sitting), "getUp": (.crouched, .standing),
+        "standUp": (.sitting, .standing), "sitDown": (.standing, .sitting),
     ]
 
     /// The move that gets the cat from one pose to another, or nil when it is already there. From a crouch it
@@ -20,7 +20,6 @@ extension ClipInfo {
         switch (from, to) {
         case (.sitting, .standing): return "standUp"
         case (.standing, .sitting): return "sitDown"
-        case (.crouched, _): return "getUp"
         case (.lying, _): return "wake"
         default: return nil
         }
@@ -41,6 +40,9 @@ struct ClipInfo: Decodable {
     let loop: Bool?
     /// Clip pixels per second the window travels while this clip plays, so the paws stay planted.
     let speed: Double?
+    /// 片段里猫真正在往前走的时间段（秒）；不写就是整段。
+    let moveFrom: Double?
+    let moveTo: Double?
     /// Where the video's own ball leaves the last frame, and its velocity (pixels/second), for handing over to the real ball.
     let ballEnd: [Double]?
     let ballVelocity: [Double]?

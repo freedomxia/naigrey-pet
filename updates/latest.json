@@ -1,12 +1,12 @@
 {
   "mac": {
-    "version": "3.1.0",
-    "build": 10,
-    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.1.0/naigrey-mac.zip",
-    "sha256": "e2976d56e6e01045a5bd62d5319bddeac3995bc8c9a8c24b3f2cd144183c3cea",
-    "signature": "x9lTrP4bTK9Dnlrur6ReoqvJ4voNGJcZNL68IWT222Hecw4uBjJj+V0WLJ6BoWgwghp7ylBcbcVLncg0O3M+Cg==",
+    "version": "3.2.0",
+    "build": 11,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.2.0/naigrey-mac.zip",
+    "sha256": "c3828f2983294bb3a7d5065c8afe874a571cdb1b32af9d2b3b641fa8f9082283",
+    "signature": "NwLg1j2TPFqooQGDKug6ajLNvQllf1rOTZY5721QQwLT7opIpF3+orQw8oYhiRsENOhbAGQzbMvLAUcgfiELBw==",
     "minimumSystem": "13.0",
-    "notes": "动作之间加了起身、转身、坐下：要走路先站起来，走完停下坐回去，玩完球先爬起来再追，像一镜到底",
+    "notes": "整只桌宠换成同一只猫：动作素材改用桌宠自己的坐姿图生成，进出动作不再换猫，接缝从 0.45 提到 0.98",
     "date": "2026-09-18"
   },
   "windows": null

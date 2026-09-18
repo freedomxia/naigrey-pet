@@ -631,6 +631,8 @@ final class PetController: NSObject, NSApplicationDelegate {
     /// Set when an action ends mid-ball-game: the cat stays on its feet on the last frame instead of sitting
     /// down, because chasing the ball is probably the next thing it will do.
     var holdingStand = false
+    /// 认得出「现在这一段」的号码，用来作废上一段还没到点的移动开关。
+    var moveToken = 0
 
     enum Play { case off, watch, chase, windup, swat }
     var ball: YarnBall?
@@ -931,8 +933,22 @@ final class PetController: NSObject, NSApplicationDelegate {
         act = name
         posture = ClipInfo.posture[name]?.to ?? .sitting
         holdingStand = false
-        videoWalking = name == "walk"
-        if videoWalking { walkSpeedPoints = CGFloat(clip.speed ?? 0) * clipScale }
+        // 片段自己说明第几秒到第几秒猫在往前走；窗口只在那段时间里跟着移动，所以起身的前半段不会滑行。
+        moveToken += 1
+        let token = moveToken
+        videoWalking = false
+        if let speed = clip.speed, speed > 0 {
+            walkSpeedPoints = CGFloat(speed) * clipScale
+            let begin = { [weak self] in guard let self, self.moveToken == token else { return }; self.videoWalking = true }
+            let from = clip.moveFrom ?? 0
+            if from < 0.02 { begin() } else { DispatchQueue.main.asyncAfter(deadline: .now() + from, execute: begin) }
+            if clip.loop != true, let until = clip.moveTo {
+                DispatchQueue.main.asyncAfter(deadline: .now() + until) { [weak self] in
+                    guard let self, self.moveToken == token else { return }
+                    self.videoWalking = false
+                }
+            }
+        }
         actUntil = clip.loop == true ? CACurrentMediaTime() + (loopFor ?? .infinity) : .infinity
         stage.play(clip, anchor: anchor, scale: clipScale, mirrored: mirrored, above: panel,
                    ready: { [weak self] in
@@ -994,6 +1010,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         // A play clip cut short (picked up, put to sleep) must not leave the real ball hidden.
         if act == "play", let ball, !ball.panel.isVisible { ball.held = false; ball.show(above: panel) }
         act = nil
+        moveToken += 1
         videoWalking = false
         posture = .sitting
         holdingStand = false
@@ -1186,10 +1203,7 @@ final class PetController: NSObject, NSApplicationDelegate {
             guard now >= playUntil else { return }
             play = .swat
             ball.held = true
-            let started = begin("play", mirrored: side < 0, then: { [weak self] in
-                self?.releaseBall()
-                self?.begin("getUp", mirrored: side < 0)   // up on its feet, ready to run after the ball
-            })
+            let started = begin("play", mirrored: side < 0, then: { [weak self] in self?.releaseBall() })
             if started {
                 // The cat may have to sit down first, so wait for the clip with the ball in it to really be
                 // on screen before taking the real ball away - otherwise it blinks out early.

@@ -1,137 +1,148 @@
 {
-  "sitHeight": 642.0,
+  "sitHeight": 441.0,
   "clips": [
     {
-      "name": "wave",
-      "file": "wave.mov",
-      "duration": 2.75,
+      "name": "standUp",
+      "file": "standUp.mov",
+      "duration": 5.4167,
       "size": [
-        608,
-        696
+        1000,
+        718
       ],
       "start": [
-        324.5,
-        682.0
+        436.1,
+        689.0
       ],
       "end": [
-        323.1,
-        684.0
-      ]
-    },
-    {
-      "name": "play",
-      "file": "play.mov",
-      "duration": 4.4583,
-      "size": [
-        1078,
-        642
+        417.5,
+        697.0
       ],
-      "start": [
-        398.5,
-        628.0
-      ],
-      "end": [
-        609.7,
-        641.0
-      ],
-      "ballStart": [
-        725.9,
-        522.4
-      ],
-      "ballEnd": [
-        1029.7,
-        555.9
-      ],
-      "ballVelocity": [
-        414.6,
-        36.4
-      ]
+      "speed": 309.6,
+      "moveFrom": 1.625,
+      "moveTo": 5.417
     },
     {
       "name": "walk",
       "file": "walk.mov",
-      "duration": 0.9583,
+      "duration": 0.7083,
       "size": [
-        968,
-        688
+        838,
+        568
       ],
       "start": [
-        442.8,
-        676.0
+        415.5,
+        556.0
       ],
       "end": [
-        442.8,
-        676.0
+        415.5,
+        556.0
       ],
       "loop": true,
-      "speed": 360.0
+      "speed": 309.6
     },
     {
-      "name": "stretch",
-      "file": "stretch.mov",
-      "duration": 2.4583,
+      "name": "sitDown",
+      "file": "sitDown.mov",
+      "duration": 3.1667,
       "size": [
-        952,
-        694
+        1042,
+        648
       ],
       "start": [
-        297.5,
-        680.0
+        384.3,
+        637.0
       ],
       "end": [
-        331.0,
-        676.0
+        441.5,
+        629.0
+      ],
+      "speed": 309.6,
+      "moveFrom": 0.0,
+      "moveTo": 1.167
+    },
+    {
+      "name": "wave",
+      "file": "wave.mov",
+      "duration": 4.2083,
+      "size": [
+        516,
+        496
+      ],
+      "start": [
+        260.8,
+        485.0
+      ],
+      "end": [
+        260.8,
+        483.0
       ]
     },
     {
       "name": "yawn",
       "file": "yawn.mov",
-      "duration": 2.375,
+      "duration": 3.7917,
       "size": [
-        854,
-        616
+        500,
+        474
       ],
       "start": [
-        282.4,
-        604.0
+        279.6,
+        463.0
       ],
       "end": [
-        298.0,
-        605.0
+        279.8,
+        463.0
+      ]
+    },
+    {
+      "name": "stretch",
+      "file": "stretch.mov",
+      "duration": 8.5833,
+      "size": [
+        632,
+        662
+      ],
+      "start": [
+        356.4,
+        631.0
+      ],
+      "end": [
+        356.2,
+        632.0
       ]
     },
     {
       "name": "lieDown",
       "file": "lieDown.mov",
-      "duration": 1.1667,
+      "duration": 4.25,
       "size": [
-        842,
-        590
+        838,
+        474
       ],
       "start": [
-        280.0,
-        572.0
+        339.7,
+        449.0
       ],
       "end": [
-        212.9,
-        578.0
+        323.5,
+        461.0
       ]
     },
     {
       "name": "sleep",
       "file": "sleep.mov",
-      "duration": 2.2083,
+      "duration": 4.1667,
       "size": [
-        750,
-        454
+        720,
+        352
       ],
       "start": [
-        230.9,
-        440.0
+        314.5,
+        341.0
       ],
       "end": [
-        232.9,
-        442.0
+        314.5,
+        341.0
       ],
       "loop": true,
       "pingPong": true
@@ -139,69 +150,47 @@
     {
       "name": "wake",
       "file": "wake.mov",
-      "duration": 1.7083,
+      "duration": 7.5,
       "size": [
-        784,
-        666
+        924,
+        642
       ],
       "start": [
-        234.7,
-        650.0
+        343.9,
+        625.0
       ],
       "end": [
-        340.3,
-        654.0
+        430.3,
+        627.0
       ]
     },
     {
-      "name": "standUp",
-      "file": "standUp.mov",
-      "duration": 0.7917,
+      "name": "play",
+      "file": "play.mov",
+      "duration": 7.4167,
       "size": [
-        952,
-        692
+        886,
+        488
       ],
       "start": [
-        329.0,
-        676.0
+        266.1,
+        457.0
       ],
       "end": [
-        360.5,
-        680.0
-      ]
-    },
-    {
-      "name": "sitDown",
-      "file": "sitDown.mov",
-      "duration": 0.7917,
-      "size": [
-        952,
-        692
+        266.3,
+        458.0
       ],
-      "start": [
-        360.5,
-        680.0
+      "ballStart": [
+        376.5,
+        402.3
       ],
-      "end": [
-        329.0,
-        676.0
-      ]
-    },
-    {
-      "name": "getUp",
-      "file": "getUp.mov",
-      "duration": 2.6667,
-      "size": [
-        1138,
-        720
+      "ballEnd": [
+        409.8,
+        404.2
       ],
-      "start": [
-        668.6,
-        719.0
-      ],
-      "end": [
-        438.8,
-        676.0
+      "ballVelocity": [
+        348.6,
+        50.6
       ]
     }
   ]

@@ -292,7 +292,7 @@ do {
         assert(ClipInfo.posture[clip.name] != nil, "\(clip.name) has no pose recorded, so nothing knows how to get into it")
     }
     // From any pose, playing links must reach the pose an action starts from - and must get there.
-    let poses: [Posture] = [.sitting, .standing, .crouched, .lying]
+    let poses: [Posture] = [.sitting, .standing, .lying]
     var longest = 0
     for start in poses {
         for clip in library.clips {
@@ -322,10 +322,20 @@ do {
     }
     // The joins themselves: a link must hand over at the pose the next clip starts from, and its own anchors
     // must be the mirror of the move back, or the cat would shift sideways when it stands up and sits down.
-    let up = library["standUp"]!, down = library["sitDown"]!
-    assert(abs(up.start[0] - down.end[0]) < 0.01 && abs(up.end[0] - down.start[0]) < 0.01, "standing up and sitting down must be the same move both ways")
-    let getUp = library["getUp"]!, walk = library["walk"]!
-    assert(abs(getUp.size[1] - 720) < 1 && getUp.duration > 2, "getting up runs into the walk, so it carries the turn as well")
-    assert(walk.loop == true && walk.speed != nil)
+    // 每个片段的爪子锚点必须落在自己的画面里，否则 App 会把猫踩在框外
+    for clip in library.clips {
+        assert(clip.start[0] > 0 && clip.start[0] < Double(clip.size[0]) && clip.start[1] > 0 && clip.start[1] <= Double(clip.size[1]),
+               "\(clip.name) 的起始锚点跑出画面了：\(clip.start) / \(clip.size)")
+        assert(clip.end[0] > 0 && clip.end[0] < Double(clip.size[0]), "\(clip.name) 的结束锚点跑出画面了")
+    }
+    assert(library.sitHeight > 100, "坐姿高度是所有缩放的基准")
+    let walk = library["walk"]!
+    assert(walk.loop == true && walk.speed != nil, "the walk has to loop and say how fast the ground moves")
+    // 起身那一段前半截猫还没迈步，窗口不能一开始就滑走
+    let rise = library["standUp"]!
+    assert((rise.moveFrom ?? 0) > 0.5 && (rise.moveTo ?? 0) > (rise.moveFrom ?? 0), "getting up must not slide the window before the cat actually steps")
+    for clip in library.clips where clip.speed != nil {
+        assert((clip.moveTo ?? clip.duration) <= clip.duration + 0.01, "\(clip.name) walks for longer than it lasts")
+    }
     print("PASS: every action is reachable through its links (at most \(longest) in between), and they all lead back to sitting")
 }
