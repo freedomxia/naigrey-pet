@@ -164,11 +164,11 @@ final class Updater {
     }
 
     /// Puts the new bundle where the running one lives, keeping the old one around in case it is needed.
-    static func swapIn(_ newApp: URL, destination: URL = Bundle.main.bundleURL) throws -> URL {
+    static func swapIn(_ newApp: URL, destination: URL = Bundle.main.bundleURL, backups: URL? = backupDirectory()) throws -> URL {
         let manager = FileManager.default
         let parent = destination.deletingLastPathComponent()
         guard manager.isWritableFile(atPath: parent.path) else { throw Failure.readOnly(parent.path) }
-        if let backups = backupDirectory() {
+        if let backups {
             let backup = backups.appendingPathComponent("\(destination.deletingPathExtension().lastPathComponent)-\(currentVersion).app")
             try? manager.removeItem(at: backup)
             try? manager.copyItem(at: destination, to: backup)   // on APFS this is an instant clone
