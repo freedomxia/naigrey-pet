@@ -1,6 +1,6 @@
 # Windows 预览版验证记录
 
-日期：2026-09-20。平台：macOS Apple Silicon，Windows x64 交叉构建。
+日期：2026-09-20。平台：macOS Apple Silicon 本地预览及 GitHub Actions Windows 构建机。
 
 ## 已验证
 
@@ -10,10 +10,11 @@
 - 本机 Electron 预览：猫咪显示，AI 卡片打开、失焦收起、重新打开，设置窗口及敲键盘入口动作。
 - 独立代码审查：修复重复睡眠冻结、启动提醒丢失、许可证遗漏、连接恢复说明及高刷新率位移丢失。
 
+- [Windows CI 运行 35455662509](https://github.com/freedomxia/naigrey-pet/actions/runs/35455662509)：25 项测试通过，NSIS x64 安装程序和便携 ZIP 构建成功。打包后的 Windows 程序完成全部 16 段视频透明解码及招手片段播放。
+- GitHub workflow 授权完成，工作流已启用。
+
 ## 尚未完成
 
-- GitHub CLI 缺少 workflow scope；用户已同意增加，但 GitHub 二次验证未完成、设备验证码过期。源码已推送，构建模板暂存 `Windows/ci/windows.yml`。
-- 本机 NSIS 打包器是 Intel 二进制，本机无 Rosetta，执行报 bad CPU type；未安装额外系统组件。Windows 自动构建仍需激活后执行。
 - 真实 Windows 安装 / 卸载、托盘、透明窗口、鼠标穿透、多屏、长时间动画与真实账号读取未实机验收。
 - Claude Desktop 缓存、CLI 回退、自动续期及 Windows 自动更新不在当前实现中，详见 quota-sources.md。
 
