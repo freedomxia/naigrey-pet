@@ -1,13 +1,13 @@
 {
   "mac": {
-    "version": "3.3.0",
-    "build": 13,
-    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.3.0/naigrey-mac.zip",
-    "sha256": "709cf4ad3bf3ffadeb0f05b518d084e55ff9f69e0528717d184fd9ae2f03469c",
-    "signature": "8Fp60xf4/aj6m4x0qBacu0xI9dYVd9JwSME51ikLPEtvBvVwOuI04BAXEm2L8KnJGC4OkNwxT6yIvu+Bne6gDA==",
+    "version": "3.4.0",
+    "build": 14,
+    "url": "https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip",
+    "sha256": "d9e5f96dc3d06f2e3605f496960f1e678b90675db353c2dfe3b4d58c96d06941",
+    "signature": "kDEjcJRY2LfuXcW9X0YuzbnNd2ka4nCNrR+9lfr5uDsDqVMtrQVjux8gJmkt5rvTMmwN/06P/rSAUUhUW2SvBw==",
     "minimumSystem": "13.0",
-    "notes": "陪你打字、陪你听歌：你敲键盘它跟着敲（速度随手速），你放音乐它戴上耳机点头",
-    "date": "2026-09-18"
+    "notes": "新增 Codex / Claude 额度读取、提醒和重置时间，横版面板位于猫咪下方，点击别处自动收起。",
+    "date": "2026-09-19"
   },
   "windows": null
 }
