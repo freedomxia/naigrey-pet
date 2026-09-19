@@ -28,10 +28,8 @@ final class AIStatusPanel: NSWindowController, NSWindowDelegate {
     private unowned let service: AICompanionService
     private let content = NSStackView()
     private let footnote = NSTextField(labelWithString:"")
-    private let pin = NSButton()
-    private var pinned = false
     private var signature = ""
-    private var positioned = false
+    private var outsideClickMonitor: Any?
 
     init(service:AICompanionService) {
         self.service = service
@@ -48,10 +46,6 @@ final class AIStatusPanel: NSWindowController, NSWindowDelegate {
         let header = NSStackView(); header.spacing = 4
         header.addArrangedSubview(Self.label("AI 额度",size:13,weight:.semibold))
         let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow,for:.horizontal); header.addArrangedSubview(spacer)
-        pin.image = NSImage(systemSymbolName:"pin",accessibilityDescription:"固定展开")
-        pin.title = ""; pin.bezelStyle = .texturedRounded; pin.target = self; pin.action = #selector(togglePin)
-        pin.toolTip = "固定展开"; pin.setAccessibilityLabel("固定展开")
-        header.addArrangedSubview(pin)
         header.addArrangedSubview(icon("arrow.clockwise",label:"刷新额度",action:#selector(refreshNow)))
         header.addArrangedSubview(icon("gearshape",label:"提醒设置",action:#selector(settings)))
         root.addArrangedSubview(header); header.widthAnchor.constraint(equalTo:root.widthAnchor).isActive = true
@@ -77,13 +71,13 @@ final class AIStatusPanel: NSWindowController, NSWindowDelegate {
     private func append(_ view:NSView,to stack:NSStackView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo:stack.widthAnchor).isActive = true }
     private func divider() { let line = NSBox(); line.boxType = .separator; append(line,to:content) }
     func position(near anchor:NSRect?) {
-        guard !pinned || !positioned, let window, let anchor else { return }
+        guard let window, let anchor else { return }
         let screen = NSScreen.screens.first(where:{$0.frame.intersects(anchor)}) ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
         let size = window.frame.size
         let x = min(visible.maxX-size.width-8,max(visible.minX+8,anchor.midX-size.width/2))
         let y = min(visible.maxY-size.height-8,max(visible.minY+8,anchor.minY-size.height-8))
-        window.setFrameOrigin(NSPoint(x:x,y:y)); positioned = true
+        window.setFrameOrigin(NSPoint(x:x,y:y))
     }
     func refresh() {
         footnote.stringValue = service.demo ? "演示数据 · 未连接真实账号" : service.isMuted ? "免打扰中 · 数据仍会更新" : "只读监控 · 数据按平台刷新"
@@ -156,12 +150,20 @@ final class AIStatusPanel: NSWindowController, NSWindowDelegate {
     private func stateText(_ state:AIStatus)->String {
         switch state { case .ok:return "已连接";case .stale:return "已过期";case .needsAuth:return "需登录";case .accessDenied:return "未授权";case .unsupported:return "暂不支持";case .error:return "更新失败";case .disconnected:return "未连接" }
     }
-    func windowDidResignKey(_ notification:Notification) { if !pinned { window?.orderOut(nil) } }
-    @objc private func togglePin() {
-        pinned.toggle(); window?.level = pinned ? .floating : .normal
-        pin.image = NSImage(systemSymbolName:pinned ? "pin.fill" : "pin",accessibilityDescription:pinned ? "取消固定" : "固定展开")
-        pin.toolTip = pinned ? "取消固定" : "固定展开"; pin.setAccessibilityLabel(pin.toolTip)
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        if outsideClickMonitor == nil {
+            outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.otherMouseDown]) { [weak self] _ in
+                Task { @MainActor in self?.dismiss() }
+            }
+        }
     }
+    private func dismiss() {
+        window?.orderOut(nil)
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor); self.outsideClickMonitor = nil }
+    }
+    func windowDidResignKey(_ notification:Notification) { dismiss() }
+    func windowWillClose(_ notification:Notification) { dismiss() }
     @objc private func refreshNow() { service.refreshAll() }
     @objc private func settings() { service.showSettings() }
     @objc private func connect(_ sender:NSButton) {
