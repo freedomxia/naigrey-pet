@@ -1,0 +1,52 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  width: 420px;
+  height: 260px;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+canvas {
+  width: 420px;
+  height: 260px;
+  position: absolute;
+  inset: 0;
+}
+button {
+  position: absolute;
+  left: 290px;
+  top: 214px;
+  border: 1px solid #fff9;
+  background: #665675de;
+  color: white;
+  border-radius: 14px;
+  font: 600 11px system-ui;
+  width: 30px;
+  height: 25px;
+  cursor: pointer;
+}
+button:hover {
+  background: #817099;
+}
+#bubble {
+  position: absolute;
+  left: 25px;
+  right: 25px;
+  top: 5px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 15px;
+  background: #faf6eff2;
+  color: #4c4540;
+  font: 12px/1.5 system-ui;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+#bubble.visible {
+  opacity: 1;
+}

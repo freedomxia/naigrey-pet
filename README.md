@@ -65,7 +65,7 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 2. 解压，把 `奶灰.app` 拖进「应用程序」。
 3. 双击打开，在菜单栏找到猫爪图标。
 
-支持 **macOS 13 或更新版本、Apple 芯片**。暂时没有 Windows 版本。
+支持 **macOS 13 或更新版本、Apple 芯片**。Windows 预览版正在独立开发，见 [Windows 安装与开发说明](Windows/README.md)。
 
 > 当前安装包使用本机 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被系统拦截，可右键图标选择「打开」，或到「系统设置 → 隐私与安全性」查看「仍要打开」。
 
