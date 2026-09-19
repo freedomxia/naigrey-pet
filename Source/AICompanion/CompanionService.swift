@@ -7,7 +7,8 @@ struct AISettings: Codable {
     var notifications = false
     var motion = true
     var mutedUntil: Date? = nil
-    var thresholds = [20, 10, 0]
+    var thresholds = [20, 0]
+    var resetTimeFormat: ResetTimeFormat? = nil
     var mutedProviders: Set<AIProvider> = []
     var notifyEnded = true
     var notifyWaiting = true
@@ -49,14 +50,16 @@ final class AICompanionService {
     private var lastPresented: TimeInterval = -.infinity
     private var observers: [NSObjectProtocol] = []
     private var suspended = false
-    private var pendingResetChecks: Set<String> = []
+    private var tokenRefresher:ClaudeTokenRefresher?
     private var statusPanel: AIStatusPanel?
+    private var settingsPanel: AISettingsPanel?
+    var panelAnchor: (() -> NSRect?)?
 
     init(defaults: UserDefaults = .standard, demo: Bool = false, reader: @escaping (AIProvider) async throws -> AIUsage = AIQuotaReader.fetch, authorizer: @escaping () async throws -> Void = AIQuotaReader.authorizeClaudeKeychain) {
         self.reader = reader; self.authorizer = authorizer
         self.defaults = defaults; self.demo = demo
         settings = Self.load(AISettings.self, "ai.settings", defaults) ?? AISettings()
-        rules = Self.load(AIEventRules.self, "ai.rules", defaults) ?? AIEventRules()
+        rules = AIEventRules()
         retryUntil = Self.load([String: Date].self, "ai.retry", defaults) ?? [:]
         if let saved = Self.load([AIUsage].self, "ai.cache", defaults) {
             for var value in saved where settings.enabled.contains(value.provider) && Date().timeIntervalSince(value.sourceAt) < 86400 {
@@ -64,7 +67,7 @@ final class AICompanionService {
             }
         }
         history = (Self.load([AIAlert].self, "ai.history", defaults) ?? []).filter { Date().timeIntervalSince($0.createdAt) < 86400 }
-        rules.thresholds = settings.thresholds
+        settings.thresholds = [20, 0]
         if demo {
             settings.enabled = []; readings = [:]; history = []; rules = AIEventRules()
             let now = Date()
@@ -81,7 +84,7 @@ final class AICompanionService {
         defaults.set(data,forKey:key)
     }
     private func persist() {
-        save(settings,"ai.settings"); save(rules,"ai.rules"); save(Array(readings.values),"ai.cache")
+        save(settings,"ai.settings"); save(Array(readings.values),"ai.cache")
         save(history,"ai.history"); save(retryUntil,"ai.retry")
     }
     func start() {
@@ -98,11 +101,17 @@ final class AICompanionService {
             }
         })
         timer = Timer.scheduledTimer(withTimeInterval:2,repeats:true) { [weak self] _ in Task { @MainActor in self?.tick() } }
+        if !demo, settings.enabled.contains(.claude) { startClaudeRenewal() }
         tick()
+    }
+    private func startClaudeRenewal() {
+        guard tokenRefresher == nil else { return }
+        tokenRefresher = AIQuotaReader.makeClaudeRefresher(); tokenRefresher?.start()
     }
     func stop() {
         timer?.invalidate(); timer = nil; suspend()
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; observers = []
+        tokenRefresher?.stop(); tokenRefresher = nil
         AIQuotaReader.forgetClaudeAuthorization()
         persist()
     }
@@ -116,9 +125,14 @@ final class AICompanionService {
         let event = AIAlert(id:"demo-preview",provider:.codex,title:"演示 · Codex",body:"剩余 20%，58 分钟后重置。",priority:1,createdAt:now,expiresAt:now.addingTimeInterval(6))
         _ = present?(event)
     }
+    func showSettings() {
+        if settingsPanel == nil { settingsPanel = AISettingsPanel(service:self) }
+        settingsPanel?.showWindow(nil); settingsPanel?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps:true)
+    }
     func showPanel() {
         if statusPanel == nil { statusPanel = AIStatusPanel(service:self) }
-        unreadIDs = []; statusPanel?.showWindow(nil); statusPanel?.window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true)
+        unreadIDs = []; statusPanel?.position(near:panelAnchor?()); statusPanel?.showWindow(nil); statusPanel?.window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true)
         changed()
     }
     func connect(_ p:AIProvider) {
@@ -126,19 +140,29 @@ final class AICompanionService {
         if settings.enabled.contains(p) { refresh(p,manual:true); return }
         settings.enabled.insert(p); readings[p] = nil; rules.forget(p); lastAttempt[p] = nil
         persist(); changed()
-        if p == .claude {
-            guard tasks[p] == nil else { return }
-            let generation = generations[p,default:0]; refreshing.insert(p)
-            tasks[p] = Task { [weak self] in
-                do { try await self?.authorizer() }
-                catch { /* fetch provides the actionable no-secret status */ }
-                guard let self, !Task.isCancelled, self.generations[p,default:0] == generation, self.settings.enabled.contains(p) else { return }
-                self.tasks[p] = nil; self.refreshing.remove(p); self.refresh(p,manual:true)
+        if p == .claude { startClaudeRenewal() }
+        refresh(p,manual:true)
+    }
+    func authorizeClaude() {
+        let p = AIProvider.claude
+        guard !demo, settings.enabled.contains(p), tasks[p] == nil else { return }
+        let generation = generations[p,default:0]; refreshing.insert(p)
+        tasks[p] = Task { [weak self] in
+            do { try await self?.authorizer() }
+            catch {
+                guard let self, !Task.isCancelled, self.generations[p,default:0] == generation else { return }
+                self.tasks[p] = nil; self.refreshing.remove(p)
+                var value = self.readings[p] ?? AIUsage(provider:p,accountID:"",status:.accessDenied,source:"",sourceAt:.distantPast,observedAt:Date(),windows:[])
+                value.status = .accessDenied; value.message = "钥匙串访问未获授权；请点击允许访问后重试。"
+                self.readings[p] = value; self.changed(); return
             }
-        } else { refresh(p,manual:true) }
+            guard let self, !Task.isCancelled, self.generations[p,default:0] == generation, self.settings.enabled.contains(p) else { return }
+            self.tasks[p] = nil; self.refreshing.remove(p); self.lastAttempt[p] = nil; self.readings[p]?.status = .needsAuth
+            self.refresh(p,manual:true)
+        }
     }
     func disconnect(_ p:AIProvider) {
-        if p == .claude { AIQuotaReader.forgetClaudeAuthorization() }
+        if p == .claude { tokenRefresher?.stop(); tokenRefresher = nil; AIQuotaReader.forgetClaudeAuthorization() }
         generations[p,default:0] += 1; tasks.removeValue(forKey:p)?.cancel(); refreshing.remove(p)
         sessionGeneration += 1; sessionTask?.cancel(); sessionTask = nil
         settings.enabled.remove(p); readings[p] = nil; rules.forget(p); lastAttempt[p] = nil
@@ -147,7 +171,7 @@ final class AICompanionService {
         sessionRules = AISessionRules(); AISessionReader.clearCache(); persist(); changed()
     }
     func updateSettings(_ update:(inout AISettings)->Void) {
-        update(&settings); rules.thresholds = settings.thresholds
+        update(&settings); settings.thresholds = [20, 0]
         if isMuted { queue = [] }
         persist(); changed()
     }
@@ -172,9 +196,9 @@ final class AICompanionService {
     func refresh(_ p:AIProvider,manual:Bool = false) {
         let now = Date()
         guard !demo, !suspended, settings.enabled.contains(p), tasks[p] == nil,
-              retryUntil[p.rawValue].map({$0 <= now}) ?? true,
+              (p == .claude || (retryUntil[p.rawValue].map({$0 <= now}) ?? true)),
               lastAttempt[p].map({now.timeIntervalSince($0) >= 15}) ?? true else { return }
-        if !manual, let status = readings[p]?.status, [.needsAuth,.accessDenied,.unsupported].contains(status) { return }
+        if readings[p]?.status == .accessDenied { return }
         lastAttempt[p] = now; refreshing.insert(p); changed()
         let generation = generations[p,default:0]
         tasks[p] = Task { [weak self] in
@@ -188,7 +212,7 @@ final class AICompanionService {
                 }
                 self.readings[p] = value; self.failures[p] = 0; self.retryUntil[p.rawValue] = nil
                 var core = value; core.windows.removeAll { $0.isExtra || $0.unlimited }
-                let events = self.rules.observe(core,now:Date())
+                let events = self.rules.observe(core,now:Date(),muted:self.isMuted || self.settings.mutedProviders.contains(p))
                 self.accept(events)
             } catch {
                 guard let self, !Task.isCancelled, self.generations[p,default:0] == generation, self.settings.enabled.contains(p) else { return }
@@ -196,10 +220,12 @@ final class AICompanionService {
                 let status = failure?.status ?? .error
                 let message = failure?.message ?? "暂时无法读取，请稍后刷新。"
                 var previous = self.readings[p] ?? AIUsage(provider:p,accountID:"",status:status,source:"",sourceAt:.distantPast,observedAt:now,windows:[],message:nil)
-                previous.status = status; previous.message = message; previous.observedAt = Date()
+                if [.needsAuth,.unsupported].contains(status) { previous.windows = [] }
+                previous.status = previous.windows.isEmpty || [.needsAuth,.unsupported].contains(status) ? status : (Date().timeIntervalSince(previous.sourceAt) > 900 ? .stale : .ok)
+                previous.message = message; previous.observedAt = Date()
                 self.readings[p] = previous
                 self.failures[p,default:0] += 1
-                let delay = max(failure?.retryAfter ?? 0, min(900,60 * pow(2,Double(min(4,self.failures[p,default:1]-1)))))
+                let delay = failure?.retryAfter ?? 60
                 self.retryUntil[p.rawValue] = Date().addingTimeInterval(delay)
             }
             guard let self, self.generations[p,default:0] == generation else { return }
@@ -212,27 +238,21 @@ final class AICompanionService {
         if !demo {
             for p in settings.enabled {
                 if var v = readings[p], now.timeIntervalSince(v.sourceAt) > 900, v.status == .ok { v.status = .stale; readings[p] = v }
-                let interval:TimeInterval = sessions.contains(where:{$0.state == "busy"}) ? 60 : 300
+                let resetDue = readings[p]?.windows.contains { $0.resetAt.map { $0 <= now } ?? false } ?? false
+                let interval:TimeInterval = sessions.contains(where:{$0.state == "busy"}) || resetDue ? 60 : 300
                 if lastAttempt[p].map({now.timeIntervalSince($0) >= interval}) ?? true { refresh(p) }
-                if let v = readings[p], v.status == .ok {
-                    for w in v.windows {
-                        if let reset = w.resetAt, reset <= now {
-                            let key = "\(p.rawValue).\(w.id).\(reset.timeIntervalSince1970)"
-                            if !pendingResetChecks.contains(key) {
-                                refresh(p)
-                                if tasks[p] != nil { pendingResetChecks = pendingResetChecks.filter { !$0.hasPrefix("\(p.rawValue).\(w.id).") }; pendingResetChecks.insert(key) }
-                            }
-                        }
-                    }
-                }
             }
             if sessionTask == nil, !settings.enabled.isEmpty {
                 let enabled = settings.enabled, generation = sessionGeneration
                 sessionTask = Task { [weak self] in
                     let found = await Task.detached(priority:.utility) { AISessionReader.read(enabled:enabled) }.value
                     guard let self, !Task.isCancelled, self.sessionGeneration == generation else { return }
-                    self.sessions = found
-                    self.accept(self.sessionRules.observe(found,now:Date()))
+                    let active = found.filter { session in
+                        guard let pid = self.tokenRefresher?.launchedPID else { return true }
+                        return !session.id.hasPrefix("claude-\(pid)-")
+                    }
+                    self.sessions = active
+                    self.accept(self.sessionRules.observe(active,now:Date()))
                     self.sessionTask = nil; self.changed()
                 }
             }
@@ -258,7 +278,7 @@ final class AICompanionService {
     private func drain() {
         if isMuted { queue = []; return }
         queue.removeAll { !settings.enabled.contains($0.provider) || !allowed($0) || !AIReminderPolicy.relevant($0,readings:readings,sessions:sessions,now:Date()) }
-        guard !isMuted, statusPanel?.window?.isVisible != true, let event = queue.first else { return }
+        guard !isMuted, let event = queue.first else { return }
         let now = ProcessInfo.processInfo.systemUptime
         guard event.priority == 0 || now - lastPresented >= 15 else { return }
         // Never let multiple P0 items replace each other on successive 2-second ticks.
@@ -273,5 +293,5 @@ final class AICompanionService {
             queue.removeFirst(); lastPresented = now
         }
     }
-    private func changed() { statusPanel?.refresh(); onChange?() }
+    private func changed() { statusPanel?.refresh(); settingsPanel?.refresh(); onChange?() }
 }

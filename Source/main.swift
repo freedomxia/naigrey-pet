@@ -777,14 +777,25 @@ final class PetController: NSObject, NSApplicationDelegate {
     @MainActor func setupAICompanion() {
         let service = AICompanionService(demo: CommandLine.arguments.contains("--ai-demo"))
         aiCompanion = service
+        service.panelAnchor = { [weak self] in
+            guard let self else { return nil }
+            // Reserve room below the cat for the horizontal quota card.
+            if let screen = self.panel.screen ?? NSScreen.main {
+                let minY = screen.visibleFrame.minY + 228
+                if self.panel.frame.minY < minY {
+                    self.panel.setFrameOrigin(NSPoint(x:self.panel.frame.minX,y:minY))
+                }
+            }
+            return self.panel.frame
+        }
         let badge = NSButton(title: "AI", target: self, action: #selector(showAIStatus))
         badge.bezelStyle = .rounded; badge.controlSize = .small
         badge.frame = NSRect(x: 8, y: 8, width: 36, height: 24)
-        badge.setAccessibilityLabel("AI 额度与任务，有新提醒")
-        badge.isHidden = true; petView.addSubview(badge); aiBadge = badge
+        badge.setAccessibilityLabel("打开 AI 额度卡片")
+        badge.isHidden = false; petView.addSubview(badge); aiBadge = badge
         service.onChange = { [weak self, weak service] in
             guard let self, let service else { return }
-            self.aiBadge?.isHidden = service.unread == 0 && !service.sessions.contains(where: { ["waiting", "busy"].contains($0.state) })
+            self.aiBadge?.isHidden = false
             self.aiBadge?.title = service.sessions.contains(where: { $0.state == "busy" }) ? "AI⋯" : "AI"
             self.aiBadge?.toolTip = "AI 额度与任务 · \(service.unread) 条未读"
         }

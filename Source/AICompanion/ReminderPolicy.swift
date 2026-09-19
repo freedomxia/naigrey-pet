@@ -11,7 +11,8 @@ enum AIReminderPolicy {
               event.accountID == usage.accountID, let windowID = event.windowID,
               let window = usage.windows.first(where:{$0.id == windowID}), !window.unlimited,
               let used = window.usedFraction, used.isFinite else { return false }
-        if event.kind == "reset" { return used < 1 }
+        if event.kind == "reset" { return true }
+        if ["weekly-limit","session-limit"].contains(event.kind ?? "") { return used >= 1 }
         if let kind = event.kind, kind.hasPrefix("threshold-"), let threshold = Double(kind.dropFirst(10)) {
             return used >= 1-threshold/100
         }

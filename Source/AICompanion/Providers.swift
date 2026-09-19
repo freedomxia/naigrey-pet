@@ -7,11 +7,15 @@ import LocalAuthentication
 // CodexCredentials.swift, CodexLocalProvider.swift, CodexUsage.swift,
 // ClaudeCredentials.swift, ClaudeOAuthProvider.swift, ClaudeProfile.swift.
 // Copyright (c) 2026 Vinz — MIT; see THIRD_PARTY_NOTICES.md.
-// No upstream credential-refresh or CLI execution code is included.
+// Source selection and parsers are shared with the vendored Codenotch core.
 
 /// Call only after the user connects a provider. This type never starts timers.
 enum AIQuotaReader {
     static func fetch(_ provider: AIProvider) async throws -> AIUsage {
+        if provider == .claude { return try await ClaudeQuotaSources.shared.fetch() }
+        return try await fetchOAuth(provider)
+    }
+    static func fetchOAuth(_ provider: AIProvider, retryUnauthorized:Bool = true) async throws -> AIUsage {
         try Task.checkCancellation()
         let credential: QuotaCredential
         switch provider {
@@ -23,6 +27,9 @@ enum AIQuotaReader {
             credential = try QuotaParser.codexCredential(data)
         case .claude:
             credential = try await readClaude(interactive: false)
+        }
+        if provider == .claude, let expiry = credential.expiresAt, expiry <= Date() {
+            throw AIProviderError(status:.stale,message:"Claude 登录待续期；正在等待 Claude Code 更新。")
         }
         try Task.checkCancellation()
         let endpoint = provider == .codex
@@ -45,6 +52,10 @@ enum AIQuotaReader {
             let (data, response) = try await session.data(for: request)
             try Task.checkCancellation()
             guard let http = response as? HTTPURLResponse else { throw QuotaParser.invalid() }
+            if provider == .claude, [401,403].contains(http.statusCode), retryUnauthorized {
+                ClaudeQuotaKeychain.forget()
+                return try await fetchOAuth(provider,retryUnauthorized:false)
+            }
             try QuotaParser.checkHTTP(status: http.statusCode, retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
             guard data.count <= 2_000_000 else { throw QuotaParser.invalid() }
             let now = Date()
@@ -66,8 +77,14 @@ enum AIQuotaReader {
     }
 
     /// Drop the in-memory secret on disconnect or application shutdown.
-    static func forgetClaudeAuthorization() { ClaudeQuotaKeychain.forget() }
+    static func forgetClaudeAuthorization() { ClaudeQuotaKeychain.forget(); Task { await ClaudeQuotaSources.shared.forget() } }
 
+    @MainActor static func makeClaudeRefresher()->ClaudeTokenRefresher {
+        ClaudeTokenRefresher(expiry:{ ClaudeQuotaKeychain.expiry() },reload:{
+            ClaudeQuotaKeychain.forget()
+            return try? await readClaude(interactive:false).expiresAt
+        })
+    }
     private static func readClaude(interactive: Bool) async throws -> QuotaCredential {
         // Security.framework may block waiting for its own authorization dialog.
         // Keep this entirely away from AppKit's main thread.
@@ -162,10 +179,10 @@ enum QuotaParser {
         }
         return QuotaCredential(token: token, rawAccountID: account, fingerprint: fingerprint("codex:" + account))
     }
-    static func claudeCredential(_ data: Data, now: Date = Date()) throws -> QuotaCredential {
+    static func claudeCredential(_ data: Data, now: Date = Date(), allowExpired:Bool = false) throws -> QuotaCredential {
         let root = try object(data)
         guard let oauth = root["claudeAiOauth"] as? [String: Any], let token = nonempty(oauth["accessToken"]),
-              let expiry = number(oauth["expiresAt"]), expiry / 1000 > now.timeIntervalSince1970 else {
+              let expiry = number(oauth["expiresAt"]), (allowExpired || expiry / 1000 > now.timeIntervalSince1970) else {
             throw AIProviderError(status: .needsAuth, message: "Claude Code 登录已过期或不可用，请在原应用更新登录。")
         }
         // Claude's opaque token has no independently verifiable account ID.
@@ -182,7 +199,7 @@ enum QuotaParser {
                 formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
                 seconds = formatter.date(from: value)?.timeIntervalSince(now)
             }
-            let delay = seconds.flatMap { $0.isFinite ? max(60, $0) : nil } ?? 300
+            let delay = seconds.flatMap { $0.isFinite ? max(60, $0) : nil } ?? 60
             throw AIProviderError(status: .error, message: "额度接口限流，稍后重试。", retryAfter: delay)
         }
         guard (200..<300).contains(status) else {
@@ -190,35 +207,8 @@ enum QuotaParser {
         }
     }
     static func codex(_ data: Data, now: Date = Date()) throws -> [AILimit] {
-        let root = try object(data)
-        var windows: [AILimit] = []
-        func append(_ limits: [String: Any], prefix: String = "", label: String = "") {
-            // Only an explicit boolean at the quota/window level means unlimited.
-            // In particular credits.unlimited says nothing about subscription quota.
-            let groupUnlimited = explicitlyTrue(limits["unlimited"])
-            if groupUnlimited && limits["primary_window"] as? [String: Any] == nil && limits["secondary_window"] as? [String: Any] == nil {
-                windows.append(AILimit(id: prefix + "primary", label: label + "主要额度", isExtra: !prefix.isEmpty, unlimited: true))
-            }
-            for (key, id, title) in [("primary_window", "primary", "主要额度"), ("secondary_window", "secondary", "次要额度")] {
-                guard let window = limits[key] as? [String: Any] else { continue }
-                let duration = number(window["limit_window_seconds"]).flatMap { $0 > 0 ? $0 : nil }
-                let reset = number(window["reset_at"]).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
-                    ?? number(window["reset_after_seconds"]).flatMap { $0 >= 0 ? now.addingTimeInterval($0) : nil }
-                let knownTitle = duration == 18000 ? "5 小时额度" : duration == 604800 ? "每周额度" : title
-                let unlimited = groupUnlimited || explicitlyTrue(window["unlimited"])
-                windows.append(AILimit(id: prefix + id, label: label + knownTitle,
-                                       usedFraction: unlimited ? nil : fraction(window["used_percent"]), resetAt: reset,
-                                       periodSeconds: duration, isExtra: !prefix.isEmpty, unlimited: unlimited))
-            }
-        }
-        if let main = root["rate_limit"] as? [String: Any] { append(main) }
-        if let review = root["code_review_rate_limit"] as? [String: Any] { append(review, prefix: "review_", label: "代码审查 · ") }
-        for extra in root["additional_rate_limits"] as? [[String: Any]] ?? [] {
-            guard let name = nonempty(extra["metered_feature"]) ?? nonempty(extra["limit_name"]), let limits = extra["rate_limit"] as? [String: Any] else { continue }
-            append(limits, prefix: "extra_\(name)_", label: "\(nonempty(extra["limit_name"]) ?? name) · ")
-        }
-        guard !windows.isEmpty else { throw invalid() }
-        return unique(windows)
+        do { return try CodexUsage.windows(from:data,now:now).map { $0.local(provider:.codex) } }
+        catch { throw invalid() }
     }
     static func isoDate(_ value: Any?) -> Date? {
         guard let text = value as? String else { return nil }
@@ -229,27 +219,11 @@ enum QuotaParser {
         return parser.date(from: text)
     }
     static func claude(_ data: Data) throws -> [AILimit] {
-        let root = try object(data)
-        var windows: [AILimit] = []
-        func append(_ window: [String: Any], id: String, label: String, field: String) {
-            windows.append(AILimit(id: id, label: label, usedFraction: fraction(window[field]), resetAt: isoDate(window["resets_at"]),
-                                   periodSeconds: id == "session" ? 18000 : ["weekly", "weekly_opus", "weekly_sonnet", "weekly_scoped"].contains(id) ? 604800 : nil,
-                                   isExtra: id != "session" && id != "weekly"))
-        }
-        for item in root["limits"] as? [[String: Any]] ?? [] {
-            guard let kind = nonempty(item["kind"]) else { continue }
-            let id = kind == "weekly_all" ? "weekly" : kind
-            let model = ((item["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
-            append(item, id: id, label: id == "session" ? "当前会话" : id == "weekly" ? "每周额度" : model ?? kind, field: "percent")
-        }
-        for (key, id, label) in [("five_hour", "session", "当前会话"), ("seven_day", "weekly", "每周额度"), ("seven_day_opus", "weekly_opus", "Opus 每周"), ("seven_day_sonnet", "weekly_sonnet", "Sonnet 每周")] {
-            if !windows.contains(where: { $0.id == id }), let window = root[key] as? [String: Any] { append(window, id: id, label: label, field: "utilization") }
-        }
-        guard !windows.isEmpty else { throw invalid() }
-        return unique(windows).sorted { a, b in
-            func rank(_ id: String) -> Int { id == "session" ? 0 : id == "weekly" ? 1 : 2 }
-            return rank(a.id) == rank(b.id) ? a.id < b.id : rank(a.id) < rank(b.id)
-        }
+        do {
+            let windows = try UsageResponse.decoder.decode(UsageResponse.self,from:data).limitWindows()
+            guard !windows.isEmpty else { throw invalid() }
+            return windows.map { $0.local(provider:.claude) }
+        } catch { throw invalid() }
     }
     private static func unique(_ windows: [AILimit]) -> [AILimit] {
         var seen = Set<String>()
@@ -270,9 +244,11 @@ private enum ClaudeQuotaKeychain {
     // identity and modification time so account switches cannot reuse it.
     private static let cacheLock = NSLock()
     private static var generation = QuotaReadGeneration()
+    private static var tokenExpiry:Date?
+    static func expiry()->Date? { cacheLock.lock(); defer { cacheLock.unlock() }; return tokenExpiry }
     private static var cached: (reference: Data, modified: Date, credential: QuotaCredential)?
     static func forget() {
-        cacheLock.lock(); generation.invalidate(); cached = nil; cacheLock.unlock()
+        cacheLock.lock(); generation.invalidate(); cached = nil; tokenExpiry = nil; cacheLock.unlock()
     }
     static func currentGeneration() -> UInt64 {
         cacheLock.lock(); defer { cacheLock.unlock() }
@@ -324,7 +300,7 @@ private enum ClaudeQuotaKeychain {
                                     kSecUseAuthenticationContext: secretContext]
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { throw authError(status) }
-        let credential = try QuotaParser.claudeCredential(data)
+        let credential = try QuotaParser.claudeCredential(data,allowExpired:true)
         // The authorization dialog may have stayed open across disconnect or
         // an account rotation. Never resurrect its secret or return that read.
         guard currentGeneration() == captured else { throw CancellationError() }
@@ -332,6 +308,7 @@ private enum ClaudeQuotaKeychain {
         guard current.0 == winner.0 && current.1 == winner.1 else { throw CancellationError() }
         cacheLock.lock()
         guard generation.accepts(captured) else { cacheLock.unlock(); throw CancellationError() }
+        tokenExpiry = credential.expiresAt
         cached = (winner.1, winner.0, credential)
         cacheLock.unlock()
         return credential

@@ -1,189 +1,171 @@
 import AppKit
 
-private final class AITopDownView: NSView { override var isFlipped: Bool { true } }
+/// A remaining-quota meter. Missing/old data never masquerades as a healthy quota.
+private final class AIQuotaMeter: NSView {
+    let fraction: Double?
+    let tint: NSColor
+    init(fraction:Double?, tint:NSColor) {
+        self.fraction = fraction; self.tint = tint
+        super.init(frame:.zero)
+        heightAnchor.constraint(equalToConstant:5).isActive = true
+        setAccessibilityElement(true); setAccessibilityRole(.progressIndicator)
+        setAccessibilityLabel("剩余额度")
+        setAccessibilityValue(fraction.map { "\(Int(($0 * 100).rounded()))%" } ?? "未知")
+    }
+    required init?(coder:NSCoder) { fatalError() }
+    override func draw(_ dirtyRect:NSRect) {
+        NSColor.quaternaryLabelColor.setFill()
+        NSBezierPath(roundedRect:bounds,xRadius:2.5,yRadius:2.5).fill()
+        guard let fraction, fraction > 0 else { return }
+        tint.setFill()
+        NSBezierPath(roundedRect:NSRect(x:0,y:0,width:bounds.width * min(1,max(0,fraction)),height:bounds.height),xRadius:2.5,yRadius:2.5).fill()
+    }
+}
+private final class AICardDocument: NSView { override var isFlipped:Bool { true } }
 
 @MainActor
-final class AIStatusPanel: NSWindowController {
+final class AIStatusPanel: NSWindowController, NSWindowDelegate {
     private unowned let service: AICompanionService
     private let content = NSStackView()
-    private let status = NSTextField(labelWithString:"")
-    private let sound = NSButton(checkboxWithTitle:"声音",target:nil,action:nil)
-    private let notifications = NSButton(checkboxWithTitle:"系统通知",target:nil,action:nil)
-    private let motion = NSButton(checkboxWithTitle:"轻动作联动",target:nil,action:nil)
-    private let thresholds = NSTextField(string:"20,10,0")
-    private let mute = NSButton(title:"暂停提醒 1 小时",target:nil,action:nil)
+    private let footnote = NSTextField(labelWithString:"")
+    private let pin = NSButton()
+    private var pinned = false
     private var signature = ""
-    private let ended = NSButton(checkboxWithTitle:"本轮结束",target:nil,action:nil)
-    private let waiting = NSButton(checkboxWithTitle:"等待操作",target:nil,action:nil)
-    private let reset = NSButton(checkboxWithTitle:"额度恢复",target:nil,action:nil)
-    private let quiet = NSTextField(string:"")
+    private var positioned = false
 
     init(service:AICompanionService) {
         self.service = service
-        let window = NSPanel(contentRect:NSRect(x:0,y:0,width:640,height:800),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
-        window.title = service.demo ? "奶灰 · AI 额度与任务（演示）" : "奶灰 · AI 额度与任务"
-        window.hidesOnDeactivate = false
-        window.minSize = NSSize(width:570,height:620); window.isReleasedWhenClosed = false
-        super.init(window:window)
-        let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 14
-        root.edgeInsets = NSEdgeInsets(top:20,left:22,bottom:20,right:22); root.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView = NSView(); window.contentView!.addSubview(root)
-        NSLayoutConstraint.activate([root.leadingAnchor.constraint(equalTo:window.contentView!.leadingAnchor),root.trailingAnchor.constraint(equalTo:window.contentView!.trailingAnchor),root.topAnchor.constraint(equalTo:window.contentView!.topAnchor),root.bottomAnchor.constraint(equalTo:window.contentView!.bottomAnchor)])
-        let title = Self.label("额度清楚，工作安心。",size:23,weight:.semibold)
-        root.addArrangedSubview(title)
-        status.font = .systemFont(ofSize:12); status.textColor = .secondaryLabelColor; root.addArrangedSubview(status)
-        let toolbar = NSStackView(); toolbar.spacing = 8
-        toolbar.addArrangedSubview(button("刷新额度",#selector(refreshNow)))
-        toolbar.addArrangedSubview(button("预览气泡",#selector(previewBubble)))
-        mute.target = self; mute.action = #selector(toggleMute); toolbar.addArrangedSubview(mute)
-        root.addArrangedSubview(toolbar)
-        let options = NSStackView(); options.spacing = 18
-        for control in [sound,notifications,motion] { control.target = self; control.action = #selector(changeOptions); options.addArrangedSubview(control) }
-        root.addArrangedSubview(options)
-        let events = NSStackView(); events.spacing = 16
-        for control in [ended,waiting,reset] { control.target = self; control.action = #selector(changeEvents); events.addArrangedSubview(control) }
-        root.addArrangedSubview(events)
-        let quietRow = NSStackView(); quietRow.spacing = 8
-        quietRow.addArrangedSubview(Self.label("每日免打扰",size:12))
-        quiet.placeholderString = "22:00-08:00，留空关闭"; quiet.widthAnchor.constraint(equalToConstant:180).isActive = true
-        quiet.setAccessibilityLabel("每日免打扰时段")
-        quietRow.addArrangedSubview(quiet); quietRow.addArrangedSubview(button("保存时段",#selector(saveQuiet)))
-        root.addArrangedSubview(quietRow)
-        let thresholdRow = NSStackView(); thresholdRow.spacing = 8
-        thresholdRow.addArrangedSubview(Self.label("剩余额度提醒 %",size:12))
-        thresholds.widthAnchor.constraint(equalToConstant:110).isActive = true
-        thresholds.setAccessibilityLabel("剩余额度阈值，逗号分隔")
-        thresholdRow.addArrangedSubview(thresholds); thresholdRow.addArrangedSubview(button("保存阈值",#selector(saveThresholds)))
-        root.addArrangedSubview(thresholdRow)
-        let line = NSBox(); line.boxType = .separator; root.addArrangedSubview(line); line.widthAnchor.constraint(equalTo:root.widthAnchor,constant:-44).isActive = true
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        content.orientation = .vertical; content.alignment = .leading; content.spacing = 15; content.translatesAutoresizingMaskIntoConstraints = false
-        let document = AITopDownView(); document.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(content); scroll.documentView = document
-        NSLayoutConstraint.activate([document.widthAnchor.constraint(equalTo:scroll.contentView.widthAnchor),content.leadingAnchor.constraint(equalTo:document.leadingAnchor),content.trailingAnchor.constraint(equalTo:document.trailingAnchor,constant:-12),content.topAnchor.constraint(equalTo:document.topAnchor),content.bottomAnchor.constraint(equalTo:document.bottomAnchor)])
-        root.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo:root.widthAnchor,constant:-44).isActive = true
-        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant:220).isActive = true
-        let footer = Self.label("只读本机登录与状态 · 不自动使用重置券 · 不修改 Codex / Claude 配置",size:11)
-        footer.textColor = .secondaryLabelColor; root.addArrangedSubview(footer)
-        thresholds.stringValue = service.settings.thresholds.map(String.init).joined(separator:",")
-        if let start = service.settings.quietStart, let end = service.settings.quietEnd {
-            quiet.stringValue = String(format:"%02d:%02d-%02d:%02d",start/60,start%60,end/60,end%60)
-        }
-        window.initialFirstResponder = nil
-        window.center(); refresh()
+        let panel = NSPanel(contentRect:NSRect(x:0,y:0,width:360,height:210),styleMask:[.titled,.closable,.fullSizeContentView],backing:.buffered,defer:false)
+        panel.title = service.demo ? "奶灰 · 额度卡片（演示）" : "奶灰 · 额度卡片"
+        panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
+        panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false
+        super.init(window:panel); panel.delegate = self
+        let backdrop = NSVisualEffectView(); backdrop.material = .popover; backdrop.blendingMode = .behindWindow; backdrop.state = .active
+        panel.contentView = backdrop
+        let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 4; root.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(root)
+        NSLayoutConstraint.activate([root.leadingAnchor.constraint(equalTo:backdrop.leadingAnchor,constant:12),root.trailingAnchor.constraint(equalTo:backdrop.trailingAnchor,constant:-12),root.topAnchor.constraint(equalTo:backdrop.topAnchor,constant:26),root.bottomAnchor.constraint(equalTo:backdrop.bottomAnchor,constant:-8)])
+        let header = NSStackView(); header.spacing = 4
+        header.addArrangedSubview(Self.label("AI 额度",size:13,weight:.semibold))
+        let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow,for:.horizontal); header.addArrangedSubview(spacer)
+        pin.image = NSImage(systemSymbolName:"pin",accessibilityDescription:"固定展开")
+        pin.title = ""; pin.bezelStyle = .texturedRounded; pin.target = self; pin.action = #selector(togglePin)
+        pin.toolTip = "固定展开"; pin.setAccessibilityLabel("固定展开")
+        header.addArrangedSubview(pin)
+        header.addArrangedSubview(icon("arrow.clockwise",label:"刷新额度",action:#selector(refreshNow)))
+        header.addArrangedSubview(icon("gearshape",label:"提醒设置",action:#selector(settings)))
+        root.addArrangedSubview(header); header.widthAnchor.constraint(equalTo:root.widthAnchor).isActive = true
+        let scroll = NSScrollView(); scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        let doc = AICardDocument(); doc.translatesAutoresizingMaskIntoConstraints = false
+        content.orientation = .vertical; content.alignment = .leading; content.spacing = 4; content.translatesAutoresizingMaskIntoConstraints = false
+        doc.addSubview(content); scroll.documentView = doc
+        NSLayoutConstraint.activate([doc.widthAnchor.constraint(equalTo:scroll.contentView.widthAnchor),content.leadingAnchor.constraint(equalTo:doc.leadingAnchor),content.trailingAnchor.constraint(equalTo:doc.trailingAnchor,constant:-6),content.topAnchor.constraint(equalTo:doc.topAnchor),content.bottomAnchor.constraint(equalTo:doc.bottomAnchor)])
+        root.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo:root.widthAnchor).isActive = true
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant:130).isActive = true
+        footnote.font = .systemFont(ofSize:10); footnote.textColor = .tertiaryLabelColor
+        root.addArrangedSubview(footnote)
+        panel.center(); refresh()
     }
-    required init?(coder:NSCoder) { fatalError("init(coder:) has not been implemented") }
-    private static func label(_ text:String,size:CGFloat = 13,weight:NSFont.Weight = .regular)->NSTextField {
+    required init?(coder:NSCoder) { fatalError() }
+    private static func label(_ text:String,size:CGFloat = 12,weight:NSFont.Weight = .regular)->NSTextField {
         let v = NSTextField(wrappingLabelWithString:text); v.font = .systemFont(ofSize:size,weight:weight); v.isSelectable = true; return v
     }
-    private func button(_ title:String,_ action:Selector)->NSButton {
-        let b = NSButton(title:title,target:self,action:action); b.bezelStyle = .rounded; return b
+    private func icon(_ symbol:String,label:String,action:Selector)->NSButton {
+        let b = NSButton(image:NSImage(systemSymbolName:symbol,accessibilityDescription:label)!,target:self,action:action)
+        b.bezelStyle = .texturedRounded; b.toolTip = label; b.setAccessibilityLabel(label); return b
+    }
+    private func append(_ view:NSView,to stack:NSStackView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo:stack.widthAnchor).isActive = true }
+    private func divider() { let line = NSBox(); line.boxType = .separator; append(line,to:content) }
+    func position(near anchor:NSRect?) {
+        guard !pinned || !positioned, let window, let anchor else { return }
+        let screen = NSScreen.screens.first(where:{$0.frame.intersects(anchor)}) ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        let size = window.frame.size
+        let x = min(visible.maxX-size.width-8,max(visible.minX+8,anchor.midX-size.width/2))
+        let y = min(visible.maxY-size.height-8,max(visible.minY+8,anchor.minY-size.height-8))
+        window.setFrameOrigin(NSPoint(x:x,y:y)); positioned = true
     }
     func refresh() {
-        ended.state = service.settings.notifyEnded ? .on : .off
-        waiting.state = service.settings.notifyWaiting ? .on : .off
-        reset.state = service.settings.notifyReset ? .on : .off
-        sound.state = service.settings.sound ? .on : .off
-        notifications.state = service.settings.notifications ? .on : .off
-        motion.state = service.settings.motion ? .on : .off
-        mute.title = service.isMuted ? "恢复提醒 1 小时" : "暂停提醒 1 小时"
-        status.stringValue = service.demo ? "演示数据，不会读取账号、发送通知或保存设置。" : service.isMuted ? "已暂停主动提醒；额度和任务继续更新。" : "点击连接后才开始读取。首次读数只显示，不补发过去的提醒。"
-        let lines = AIProvider.allCases.map { providerText($0) }
-        let sessionText = service.sessions.map { "\($0.provider.title) · \($0.name) · \(stateName($0.state))\($0.evidence == "explicit" ? "" : "（检测到活动）")" }.joined(separator:"\n")
-        let recent = service.history.suffix(5).reversed().map { "\($0.title)\n\($0.body)" }.joined(separator:"\n\n")
-        let next = lines.joined(separator:"|") + sessionText + recent + service.settings.enabled.map(\.rawValue).sorted().joined() + service.refreshing.map(\.rawValue).sorted().joined() + service.settings.mutedProviders.map(\.rawValue).sorted().joined()
-        guard next != signature else { return }; signature = next
+        footnote.stringValue = service.demo ? "演示数据 · 未连接真实账号" : service.isMuted ? "免打扰中 · 数据仍会更新" : "只读监控 · 数据按平台刷新"
+        let now = Date()
+        let encoded = (try? JSONEncoder().encode(Array(service.readings.values).sorted { $0.provider.rawValue < $1.provider.rawValue })) ?? Data()
+        let key = (service.settings.resetTimeFormat?.rawValue ?? "automatic") + encoded.base64EncodedString() + service.sessions.map { "\($0.id)\($0.state)\($0.evidence)" }.joined() + service.settings.enabled.map(\.rawValue).sorted().joined() + service.refreshing.map(\.rawValue).sorted().joined() + String(Int(now.timeIntervalSince1970/30))
+        guard key != signature else { return }; signature = key
         content.arrangedSubviews.forEach { content.removeArrangedSubview($0); $0.removeFromSuperview() }
-        for (index,p) in AIProvider.allCases.enumerated() {
-            let header = NSStackView(); header.spacing = 12
-            header.addArrangedSubview(Self.label(p.title,size:18,weight:.semibold))
-            let connect = button(service.settings.enabled.contains(p) ? "断开" : "连接本机账号",#selector(toggleConnection(_:)))
-            connect.identifier = NSUserInterfaceItemIdentifier(p.rawValue); connect.isEnabled = !service.demo
-            header.addArrangedSubview(connect)
-            let muteProvider = button(service.settings.mutedProviders.contains(p) ? "取消静音" : "静音提醒",#selector(toggleProviderMute(_:)))
-            muteProvider.identifier = NSUserInterfaceItemIdentifier(p.rawValue)
-            header.addArrangedSubview(muteProvider)
-            if service.refreshing.contains(p) { header.addArrangedSubview(Self.label("正在读取…",size:12)) }
-            content.addArrangedSubview(header)
-            let text = Self.label(lines[index]); text.setAccessibilityLabel("\(p.title) 额度详情")
-            content.addArrangedSubview(text)
-            text.widthAnchor.constraint(equalTo:content.widthAnchor).isActive = true
-            let divider = NSBox(); divider.boxType = .separator; content.addArrangedSubview(divider); divider.widthAnchor.constraint(equalTo:content.widthAnchor).isActive = true
+        let columns = NSStackView(); columns.orientation = .horizontal; columns.alignment = .top; columns.spacing = 16; columns.distribution = .fillEqually
+        append(columns,to:content)
+        for p in AIProvider.allCases {
+            let section = NSStackView(); section.orientation = .vertical; section.alignment = .leading; section.spacing = 2
+            columns.addArrangedSubview(section)
+            let usage = service.readings[p]
+            let valid = usage?.status == .ok && now.timeIntervalSince(usage?.sourceAt ?? .distantPast) <= 900
+            let header = NSStackView(); header.spacing = 4
+            let name = Self.label(p.title,size:13,weight:.semibold); header.addArrangedSubview(name)
+            let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow,for:.horizontal); header.addArrangedSubview(spacer)
+            let state = Self.label(service.refreshing.contains(p) ? "更新中…" : usage.map { stateText($0.status) } ?? "未连接",size:10)
+            state.textColor = valid ? .secondaryLabelColor : .tertiaryLabelColor
+            header.addArrangedSubview(state); append(header,to:section)
+            if let usage, !usage.windows.isEmpty {
+                for limit in usage.windows.filter({ !$0.isExtra }) { windowRow(limit,valid:valid,to:section) }
+                let extras = usage.windows.filter(\.isExtra).count
+                if extras > 0 { let more = Self.label("另有 \(extras) 个额度窗口，可在设置查看",size:10); more.textColor = .secondaryLabelColor; append(more,to:section) }
+                let mins = max(0,Int(now.timeIntervalSince(usage.sourceAt)/60))
+                let freshness = Self.label(valid ? (mins == 0 ? "刚刚确认" : "\(mins) 分钟前确认") : "历史记录 · \(mins) 分钟前",size:10)
+                header.toolTip = freshness.stringValue
+                if !valid { freshness.textColor = .tertiaryLabelColor; append(freshness,to:section) }
+                if !valid, let message = usage.message { let info = Self.label(message,size:10); info.textColor = .secondaryLabelColor; append(info,to:section) }
+            } else {
+                let empty = Self.label(usage?.message ?? (service.settings.enabled.contains(p) ? "正在读取账号额度…" : "连接后显示剩余额度与重置时间。"))
+                empty.textColor = .secondaryLabelColor; append(empty,to:section)
+                // Unknown is visually grey, never a false 0% or a full green bar.
+                append(AIQuotaMeter(fraction:nil,tint:.tertiaryLabelColor),to:section)
+                let connect = NSButton(title:service.settings.enabled.contains(p) ? "连接设置" : "连接 \(p.title)",target:self,action:#selector(connect(_:)))
+                connect.identifier = .init(p.rawValue); connect.bezelStyle = .rounded; connect.isEnabled = !service.demo
+                section.addArrangedSubview(connect)
+            }
         }
-        content.addArrangedSubview(Self.label("任务",size:16,weight:.semibold))
-        content.addArrangedSubview(Self.label(sessionText.isEmpty ? "未检测到可确认的活动。无更新不代表任务完成。" : sessionText))
-        content.addArrangedSubview(Self.label("最近提醒",size:16,weight:.semibold))
-        content.addArrangedSubview(Self.label(recent.isEmpty ? "暂无提醒。" : recent))
+        divider()
+        let title = Self.label(service.sessions.isEmpty ? "任务 · 暂无可确认的活动" : "任务状态",size:11,weight:.semibold); title.textColor = .secondaryLabelColor; append(title,to:content)
+        if !service.sessions.isEmpty {
+            for p in AIProvider.allCases {
+                let list = service.sessions.filter { $0.provider == p }; guard !list.isEmpty else { continue }
+                let waiting = list.filter { $0.state == "waiting" }.count
+                let busy = list.filter { $0.state == "busy" }.count
+                let text = waiting > 0 ? "\(waiting) 个等待操作" : busy > 0 ? "\(busy) 个活动中" : list.contains(where:{["ended","success"].contains($0.state)}) ? "本轮结束" : list.contains(where:{$0.state == "idle"}) ? "空闲" : "状态未知"
+                let row = Self.label("\(p.title)   \(text)",size:12); row.textColor = waiting > 0 ? .systemOrange : .labelColor; append(row,to:content)
+            }
+        }
     }
-    private func providerText(_ provider:AIProvider)->String {
-        guard let value = service.readings[provider] else {
-            return service.settings.enabled.contains(provider) ? "等待首次读取…" : "尚未连接。仅连接后读取本机账号，登录失效时需回原应用登录。"
-        }
-        var lines:[String] = []
-        if value.status != .ok { lines.append("\(statusName(value.status)) · \(value.message ?? "以下为上次记录")") }
-        if value.sourceAt > Date.distantPast { lines.append("\(value.status == .ok ? "最近确认" : "历史记录")：\(relative(value.sourceAt)) · \(value.source)") }
-        for limit in value.windows {
-            let percent:String
-            if limit.unlimited { percent = "不限额" }
-            else if let f = limit.usedFraction, f.isFinite, f >= 0 {
-                let left = max(0,100*(1-f)); percent = left > 0 && left < 1 ? "<1%" : "\(Int(left.rounded()))%"
-            } else { percent = "暂不可用" }
-            lines.append("\(limit.isExtra ? "其他 · " : "")\(limit.label)   剩余 \(percent)\n\(resetText(limit.resetAt))")
-        }
-        if value.status == .ok, let message = value.message { lines.append(message) }
-        if value.windows.isEmpty, value.status == .ok { lines.append("账号暂未提供可识别的额度窗口。") }
-        return lines.joined(separator:"\n\n")
-    }
-    private func relative(_ date:Date)->String {
-        let mins = max(0,Int(Date().timeIntervalSince(date)/60)); return mins == 0 ? "刚刚" : "\(mins) 分钟前"
+    private func windowRow(_ limit:AILimit,valid:Bool,to stack:NSStackView) {
+        let fraction = limit.usedFraction.flatMap { $0.isFinite && $0 >= 0 ? max(0,1-$0) : nil }
+        let color:NSColor = !valid || fraction == nil ? .tertiaryLabelColor : fraction! <= 0.10 ? .systemRed : fraction! <= 0.20 ? .systemOrange : .systemGreen
+        let line = NSStackView(); line.spacing = 8
+        line.addArrangedSubview(Self.label(limit.label,size:11))
+        let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow,for:.horizontal); line.addArrangedSubview(spacer)
+        let percent:String = limit.unlimited ? "不限额" : fraction.map { $0 > 0 && $0 < 0.01 ? "剩余 <1%" : "剩余 \(Int(($0*100).rounded()))%" } ?? "未知"
+        let value = Self.label(percent,size:12,weight:.semibold); value.textColor = color; line.addArrangedSubview(value)
+        append(line,to:stack); append(AIQuotaMeter(fraction:limit.unlimited ? nil : fraction,tint:color),to:stack)
+        let countdown = Self.label(resetText(limit.resetAt),size:10); countdown.textColor = .secondaryLabelColor
+        if let date = limit.resetAt { countdown.toolTip = date.formatted(date:.complete,time:.shortened) }
+        append(countdown,to:stack)
     }
     private func resetText(_ date:Date?)->String {
         guard let date else { return "暂未提供重置时间" }
-        let remaining = date.timeIntervalSinceNow
-        guard remaining > 0 else { return "已到预计重置时间，正在确认" }
-        let mins = max(1,Int(ceil(remaining/60))), days = mins/1440, hours = mins/60%24
-        let duration = days > 0 ? "\(days) 天 \(hours) 小时" : hours > 0 ? "\(hours) 小时 \(mins%60) 分钟" : "\(mins) 分钟"
-        let formatter = DateFormatter(); formatter.dateFormat = "M月d日 HH:mm z"
-        return "\(duration)后重置 · \(formatter.string(from:date))"
+        return ResetCopy.text(for:date,format:service.settings.resetTimeFormat ?? .automatic)
     }
-    private func statusName(_ s:AIStatus)->String {
-        switch s { case .ok:return "正常"; case .stale:return "数据过期"; case .needsAuth:return "需要登录"; case .accessDenied:return "访问未授权"; case .unsupported:return "暂不支持"; case .error:return "更新失败"; case .disconnected:return "已断开" }
+    private func stateText(_ state:AIStatus)->String {
+        switch state { case .ok:return "已连接";case .stale:return "已过期";case .needsAuth:return "需登录";case .accessDenied:return "未授权";case .unsupported:return "暂不支持";case .error:return "更新失败";case .disconnected:return "未连接" }
     }
-    private func stateName(_ s:String)->String {
-        switch s { case "busy":return "工作中";case "waiting":return "等待操作";case "ended":return "本轮结束";case "success":return "已完成";case "failure":return "失败";case "idle":return "空闲";default:return "状态未知" }
-    }
-    @objc private func previewBubble() { service.previewReminder() }
-    @objc private func toggleProviderMute(_ sender:NSButton) {
-        guard let raw = sender.identifier?.rawValue, let p = AIProvider(rawValue:raw) else { return }
-        service.updateSettings { if $0.mutedProviders.contains(p) { $0.mutedProviders.remove(p) } else { $0.mutedProviders.insert(p) } }
-    }
-    @objc private func changeEvents() { service.updateSettings { $0.notifyEnded = ended.state == .on; $0.notifyWaiting = waiting.state == .on; $0.notifyReset = reset.state == .on } }
-    @objc private func saveQuiet() {
-        let text = quiet.stringValue.trimmingCharacters(in:.whitespaces)
-        if text.isEmpty { service.updateSettings { $0.quietStart = nil; $0.quietEnd = nil }; return }
-        let halves = text.split(separator:"-")
-        func minute(_ part:Substring)->Int? {
-            let pair = part.split(separator:":"); guard pair.count == 2, let h = Int(pair[0]), let m = Int(pair[1]), (0...23).contains(h), (0...59).contains(m) else { return nil }; return h*60+m
-        }
-        guard halves.count == 2, let start = minute(halves[0]), let end = minute(halves[1]), start != end else { status.stringValue = "时段格式为 22:00-08:00，起止时间不能相同。"; return }
-        service.updateSettings { $0.quietStart = start; $0.quietEnd = end; $0.quietOverrideUntil = nil }
+    func windowDidResignKey(_ notification:Notification) { if !pinned { window?.orderOut(nil) } }
+    @objc private func togglePin() {
+        pinned.toggle(); window?.level = pinned ? .floating : .normal
+        pin.image = NSImage(systemSymbolName:pinned ? "pin.fill" : "pin",accessibilityDescription:pinned ? "取消固定" : "固定展开")
+        pin.toolTip = pinned ? "取消固定" : "固定展开"; pin.setAccessibilityLabel(pin.toolTip)
     }
     @objc private func refreshNow() { service.refreshAll() }
-    @objc private func toggleMute() { let wasMuted = service.isMuted; service.updateSettings { if wasMuted { $0.mutedUntil = nil; $0.quietOverrideUntil = Date().addingTimeInterval(3600) } else { $0.mutedUntil = Date().addingTimeInterval(3600) } } }
-    @objc private func toggleConnection(_ sender:NSButton) {
+    @objc private func settings() { service.showSettings() }
+    @objc private func connect(_ sender:NSButton) {
         guard let raw = sender.identifier?.rawValue, let p = AIProvider(rawValue:raw) else { return }
-        if service.settings.enabled.contains(p) { service.disconnect(p) } else { service.connect(p) }
-    }
-    @objc private func changeOptions(_ sender:NSButton) {
-        if sender === notifications { service.enableNotifications(sender.state == .on) }
-        else { service.updateSettings { $0.sound = sound.state == .on; $0.motion = motion.state == .on } }
-    }
-    @objc private func saveThresholds() {
-        let parts = thresholds.stringValue.replacingOccurrences(of:"，",with:",").split(separator:",").map { $0.trimmingCharacters(in:.whitespaces) }
-        let values = parts.compactMap(Int.init)
-        guard !values.isEmpty, values.count == parts.count, values.allSatisfy({$0 >= 0 && $0 < 100}) else {
-            status.stringValue = "请输入 0～99 的整数，用逗号分隔，例如 20,10,0。"; return
-        }
-        let sorted = Array(Set(values + [0])).sorted(by:>)
-        service.updateSettings { $0.thresholds = sorted }; thresholds.stringValue = sorted.map(String.init).joined(separator:",")
+        if service.settings.enabled.contains(p) { service.showSettings() } else { service.connect(p) }
     }
 }

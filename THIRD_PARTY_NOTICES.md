@@ -13,7 +13,17 @@ Source reference: [Codenotch v1.14.0](https://github.com/vinzdg/codenotch/tree/v
 - `Sources/Providers/ClaudeOAuthProvider.swift`
 - `Sources/Providers/ClaudeProfile.swift`
 
-The application does not incorporate Codenotch's credential refresh, CLI usage execution, Desktop cache, UI, updater, or Phone Link implementation. Claude source selection is restricted to the default `.claude` profile's exact service names; custom profile credentials are not enumerated.
+The quota core now reuses the following v1.14.0 modules in `Source/AICompanion/CN*.swift`:
+
+- `ThresholdNotifier` (decision core; host delivers alerts), `UsageResetWatcher`, `UsageLimitWatcher`
+- `ResetCopy`, `CodexUsage`, `UsageResponse` extracted from `ClaudeOAuthProvider`
+- `ClaudeUsageCLI`, `ClaudeDesktopUsageCache`, `ClaudeCLI`, `ClaudeTokenRefresher`
+
+Host adaptations: narrow AppKit model/localization bridges, Naigrey's own CLI scratch directory, import Combine for the renewal class, and provider lifecycle/connection controls. `ClaudeQuotaSources.swift` adapts the default-profile source ordering, 30-minute Desktop freshness, 5-minute CLI/miss caching, expired-window checks, OAuth retry and exponential backoff from `ClaudeOAuthProvider`. No Codenotch UI, updater, or Phone Link is included. The two-provider UI connects the default Codex and Claude profiles; it does not expose Codenotch's multi-profile discovery UI.
+
+`Tests/AICompanion/CacheRenewalTests.swift` contains a compressed synthetic fixture from upstream `ClaudeDesktopUsageCacheTests.swift` (same MIT license).
+
+`Source/Vendor/zstd/` contains the upstream decode-only Zstandard v1.5.7 amalgamation, licensed under BSD-3-Clause. Its license and provenance are included alongside the source. It is compiled statically; no Homebrew library is required at runtime.
 
 ### MIT License
 
