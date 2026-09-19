@@ -4,7 +4,9 @@
 
 ## 安装与使用
 
-测试安装包由 [Windows preview 工作流](https://github.com/freedomxia/naigrey-pet/actions/workflows/windows.yml) 构建。打开最新成功记录，在 Artifacts 下载 `naigrey-windows-x64-preview`，解压后运行 `naigrey-windows-0.1.0-x64-setup.exe`。也可解压便携 ZIP，运行 `奶灰桌宠.exe`。
+当前已在 macOS 交叉构建 Windows x64 便携 ZIP，解压后运行 `奶灰桌宠.exe`。
+
+Windows 自动构建模板位于 [ci/windows.yml](ci/windows.yml)，等待 GitHub 工作流授权完成后移到 `.github/workflows/windows.yml` 启用。启用后的成功运行会提供 `naigrey-windows-x64-preview` 工件，包含 NSIS 安装程序和便携 ZIP。当前尚未产出经过 Windows 构建机验证的安装程序。
 
 首版安装包尚未使用 Windows 代码签名证书。安装前核对来源和同包 `SHA256SUMS.txt`。
 
@@ -34,7 +36,7 @@ npm run smoke   # Chromium 解码 / 透明通道检查
 npm run dist    # 在 Windows 构建 NSIS 安装包与便携 ZIP
 ```
 
-依赖版本固定在 package-lock.json。主进程负责账号和窗口，沙箱页面仅通过窄 IPC 接口操作。Windows GitHub Actions 会运行 Node 测试、打包，并在打包后的应用中检查全部 16 段视频的首帧解码与透明通道。
+依赖版本固定在 package-lock.json。主进程负责账号和窗口，沙箱页面仅通过窄 IPC 接口操作。配置启用后，Windows GitHub Actions 将运行 Node 测试、打包，并在打包后的应用中检查全部 16 段视频的首帧解码、透明通道，以及招手片段播放结束事件。
 
 动作素材的转换说明见 [assets/README.md](assets/README.md)。原始 HEVC alpha 需要在 macOS 用 AVFoundation 导出；已转换的素材随仓库提供，Windows 构建无需 Apple 工具。
 
