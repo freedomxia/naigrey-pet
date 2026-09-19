@@ -1,0 +1,37 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 22px;
+  font:
+    13px/1.6 "Segoe UI",
+    "Microsoft YaHei",
+    sans-serif;
+  background: #f8f5ef;
+  color: #514943;
+}
+h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+p {
+  font-size: 12px;
+  color: #8b8179;
+  margin: 0 0 15px;
+}
+label {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5ded5;
+  cursor: pointer;
+}
+input {
+  accent-color: #8d799e;
+}
+.note {
+  margin-top: 16px;
+  font-size: 11px;
+}

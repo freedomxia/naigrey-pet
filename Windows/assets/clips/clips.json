@@ -1,0 +1,301 @@
+{
+  "sitHeight": 441.0,
+  "clips": [
+    {
+      "name": "standUp",
+      "file": "standUp.webm",
+      "duration": 5.4167,
+      "size": [
+        1000,
+        718
+      ],
+      "start": [
+        436.1,
+        689.0
+      ],
+      "end": [
+        419.2,
+        697.0
+      ],
+      "speed": 307.2,
+      "moveFrom": 1.625,
+      "moveTo": 5.417
+    },
+    {
+      "name": "walk",
+      "file": "walk.webm",
+      "duration": 0.7083,
+      "size": [
+        838,
+        568
+      ],
+      "start": [
+        417.2,
+        556.0
+      ],
+      "end": [
+        417.2,
+        556.0
+      ],
+      "loop": true,
+      "speed": 307.2
+    },
+    {
+      "name": "sitDown",
+      "file": "sitDown.webm",
+      "duration": 3.1667,
+      "size": [
+        1042,
+        648
+      ],
+      "start": [
+        390.7,
+        637.0
+      ],
+      "end": [
+        441.6,
+        629.0
+      ],
+      "speed": 307.2,
+      "moveFrom": 0.0,
+      "moveTo": 1.208
+    },
+    {
+      "name": "wave",
+      "file": "wave.webm",
+      "duration": 4.2083,
+      "size": [
+        516,
+        496
+      ],
+      "start": [
+        260.8,
+        485.0
+      ],
+      "end": [
+        260.8,
+        483.0
+      ]
+    },
+    {
+      "name": "yawn",
+      "file": "yawn.webm",
+      "duration": 3.7917,
+      "size": [
+        500,
+        474
+      ],
+      "start": [
+        279.7,
+        463.0
+      ],
+      "end": [
+        279.8,
+        463.0
+      ]
+    },
+    {
+      "name": "stretch",
+      "file": "stretch.webm",
+      "duration": 8.5833,
+      "size": [
+        632,
+        662
+      ],
+      "start": [
+        356.3,
+        631.0
+      ],
+      "end": [
+        356.2,
+        632.0
+      ]
+    },
+    {
+      "name": "lieDown",
+      "file": "lieDown.webm",
+      "duration": 4.25,
+      "size": [
+        838,
+        474
+      ],
+      "start": [
+        339.7,
+        449.0
+      ],
+      "end": [
+        325.1,
+        461.0
+      ]
+    },
+    {
+      "name": "sleep",
+      "file": "sleep.webm",
+      "duration": 4.1667,
+      "size": [
+        720,
+        352
+      ],
+      "start": [
+        316.1,
+        341.0
+      ],
+      "end": [
+        316.1,
+        341.0
+      ],
+      "loop": true,
+      "pingPong": true
+    },
+    {
+      "name": "wake",
+      "file": "wake.webm",
+      "duration": 7.5,
+      "size": [
+        924,
+        642
+      ],
+      "start": [
+        342.9,
+        625.0
+      ],
+      "end": [
+        430.7,
+        627.0
+      ]
+    },
+    {
+      "name": "play",
+      "file": "play.webm",
+      "duration": 7.4167,
+      "size": [
+        886,
+        488
+      ],
+      "start": [
+        266.2,
+        457.0
+      ],
+      "end": [
+        266.3,
+        458.0
+      ],
+      "ballStart": [
+        381.4,
+        405.3
+      ],
+      "ballEnd": [
+        417.0,
+        404.5
+      ],
+      "ballVelocity": [
+        364.9,
+        44.0
+      ]
+    },
+    {
+      "name": "musicIn",
+      "file": "musicIn.webm",
+      "duration": 2.0,
+      "size": [
+        596,
+        702
+      ],
+      "start": [
+        326.8,
+        689.0
+      ],
+      "end": [
+        326.8,
+        689.0
+      ]
+    },
+    {
+      "name": "music",
+      "file": "music.webm",
+      "duration": 1.4167,
+      "size": [
+        586,
+        528
+      ],
+      "start": [
+        336.8,
+        515.0
+      ],
+      "end": [
+        336.8,
+        515.0
+      ],
+      "loop": true
+    },
+    {
+      "name": "musicOut",
+      "file": "musicOut.webm",
+      "duration": 2.8333,
+      "size": [
+        598,
+        702
+      ],
+      "start": [
+        328.8,
+        689.0
+      ],
+      "end": [
+        328.8,
+        689.0
+      ]
+    },
+    {
+      "name": "typeIn",
+      "file": "typeIn.webm",
+      "duration": 1.875,
+      "size": [
+        1032,
+        484
+      ],
+      "start": [
+        551.5,
+        453.0
+      ],
+      "end": [
+        551.5,
+        453.0
+      ]
+    },
+    {
+      "name": "type",
+      "file": "type.webm",
+      "duration": 0.4167,
+      "size": [
+        744,
+        426
+      ],
+      "start": [
+        397.5,
+        395.0
+      ],
+      "end": [
+        397.5,
+        395.0
+      ],
+      "loop": true
+    },
+    {
+      "name": "typeOut",
+      "file": "typeOut.webm",
+      "duration": 1.2917,
+      "size": [
+        1020,
+        478
+      ],
+      "start": [
+        547.5,
+        447.0
+      ],
+      "end": [
+        547.5,
+        447.0
+      ]
+    }
+  ]
+}
