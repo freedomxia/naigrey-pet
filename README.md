@@ -1,32 +1,80 @@
+<div align="center">
+
 # 奶灰桌宠
 
-一只住在 macOS 桌面上的奶灰小猫。待机时是实时逐部位动画（看鼠标、眨眼、呼吸、被撸会眯眼），做动作时播放抠好的透明视频片段（招手、打哈欠、伸懒腰、走路、趴下睡觉、醒来、玩毛线球），动作之间会起身、转身、坐下，像一镜到底，并会跟着你用电脑的作息自己犯困、入睡、醒来和打招呼。
+**桌面养只猫，顺便看一眼 AI 额度。**
 
-![版本](https://img.shields.io/github/v/release/freedomxia/naigrey-pet)
+一只会眨眼、打盹、玩球的奶灰小猫，陪你写代码，也提醒你 Codex 和 Claude 还剩多少额度。
 
-## 安装
+[![最新版本](https://img.shields.io/github/v/release/freedomxia/naigrey-pet?style=flat-square&color=8b7db8)](https://github.com/freedomxia/naigrey-pet/releases/latest)
+![macOS 13+](https://img.shields.io/badge/macOS-13%2B-555555?style=flat-square)
+![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-555555?style=flat-square)
 
-到 [Releases](https://github.com/freedomxia/naigrey-pet/releases/latest) 下载 `naigrey-mac.zip`，解压后把 `奶灰.app` 拖进「应用程序」，双击打开。
+[**下载 macOS 安装包**](https://github.com/freedomxia/naigrey-pet/releases/latest/download/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
 
-App 是本机 ad-hoc 签名、没有做 Apple 公证，所以第一次打开可能会被拦。右键点图标选「打开」，或者在「系统设置 → 隐私与安全性」里点「仍要打开」。
+<img src="docs/images/cat-poses.png" alt="奶灰小猫的六种形象：坐着、眯眼、招手、睡觉、打哈欠和走路" width="760">
 
-要求 macOS 13 或更新版本，Apple 芯片。
+<sub>奶灰的动作形象素材。实际运行会播放动画。</sub>
 
-## 用法
+</div>
 
-菜单栏的猫爪图标里有全部开关。桌面上：单击招手，双击睡觉/叫醒，拖动搬家，在头顶来回划是撸猫。详见 [使用说明.md](使用说明.md)。
+## 桌面上的小伙伴
 
-## AI 额度与提醒
+待机时，小猫会呼吸、眨眼、看鼠标；摸摸头，它会眯起眼睛。想活动一下，就招招手、伸个懒腰、玩毛线球。累了也会趴下睡觉。
 
-点击猫咪的 **AI** 按钮，在猫咪下方展开横版额度卡片；点击别处自动收起。首次在面板中连接本机 Codex / Claude 账号，收起面板后仍会刷新并提醒。
+| 和它互动 | 它会做什么 |
+| --- | --- |
+| 单击 | 招手回应 |
+| 双击 | 睡觉或醒来 |
+| 拖动 | 搬到桌面上喜欢的位置 |
+| 在头顶来回移动鼠标 | 享受摸摸头 |
+| 点击猫咪的 AI 按钮 | 展开额度卡片 |
+| 点击面板外 | 收起卡片，继续陪着你 |
 
-额度读取、80% / 100% 已用阈值提醒及重置时间对齐 Codenotch v1.14.0。Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。齿轮设置中可选择重置日期或倒计时、免打扰、声音、系统通知及轻动作联动。默认账号无可用登录时会提示，不把演示值当成实际额度。
+菜单栏的猫爪图标里有完整开关。更多动作和设置见 [使用说明](使用说明.md)。
 
-实现与验证边界见 [额度对齐记录](docs/AI-Codenotch对齐记录.md)，复用模块与许可证见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+## Codex / Claude，抬眼就能看见
 
-## 在线更新
+额度卡片横放在猫咪下方。需要时点开，看完点击别处自动收起；收起后仍会刷新额度并提醒。
 
-奶灰每天最多查一次更新，发现新版本会冒个泡告诉你，点菜单里的「换上新衣服」就会自己下载、校验、替换并重启，位置和设置都保留。也可以随时点「检查更新…」。
+<div align="center">
+
+<img src="docs/images/desktop-cat.png" alt="桌面上实际运行的奶灰小猫和 AI 按钮" width="143">
+<br>
+<img src="docs/images/quota-panel.png" alt="额度卡片实际截图：并排显示 Codex 与 Claude 的当前额度、每周额度和重置时间" width="360">
+
+<sub>猫咪与面板分别截图。面板为演示数据，数值不代表真实账号。</sub>
+
+</div>
+
+| 功能 | 说明 |
+| --- | --- |
+| 额度查看 | 并排显示 Codex、Claude 当前窗口与每周额度 |
+| 重置时间 | 可选择日期时间或倒计时 |
+| 额度提醒 | 对齐 Codenotch v1.14.0 的已用 80% / 100% 阈值与重置提醒逻辑 |
+| 提醒偏好 | 免打扰、声音、系统通知和轻动作联动可在齿轮设置中调整 |
+| 本机账号 | 首次在面板连接本机已登录的 Codex / Claude 默认账号 |
+
+Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没有可用登录或读取失败时会提示状态，不会用演示值代替实际额度。
+
+额度读取与提醒以 Codenotch v1.14.0 为对齐基准。具体覆盖范围见 [额度对齐记录](docs/AI-Codenotch对齐记录.md)，复用模块与许可证见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## 安装，只需几步
+
+1. [下载安装包 naigrey-mac.zip](https://github.com/freedomxia/naigrey-pet/releases/latest/download/naigrey-mac.zip)。
+2. 解压，把 `奶灰.app` 拖进「应用程序」。
+3. 双击打开，在菜单栏找到猫爪图标。
+
+支持 **macOS 13 或更新版本、Apple 芯片**。暂时没有 Windows 版本。
+
+> 当前安装包使用本机 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被系统拦截，可右键图标选择「打开」，或到「系统设置 → 隐私与安全性」查看「仍要打开」。
+
+## 奶灰也会自己更新
+
+每天最多自动检查一次，发现新版本会冒泡提醒。点击菜单里的「换上新衣服」，即可下载、校验、替换并重启，保留位置和设置。也可以随时点击「检查更新…」。
+
+<details>
+<summary>更新校验与备份机制</summary>
 
 更新源是这个仓库里的 [`updates/latest.json`](updates/latest.json)，安装包发在 Releases 里。因为 App 没有做公证，Gatekeeper 不会替你把关，所以更新器自己做了这件事：
 
@@ -38,23 +86,33 @@ App 是本机 ad-hoc 签名、没有做 Apple 公证，所以第一次打开可�
 
 私钥只存在发布者本机（`~/.naigrey/release-key`），不在仓库里。
 
-## 自己构建
+</details>
+
+<details>
+<summary>从源码构建与项目目录</summary>
+
+### 本地构建
+
+需要 Xcode 命令行工具。Claude 缓存所需的 Zstandard 解码器随源码静态编译，无需另外安装第三方包。
+
+首次克隆后，先把仓库中的原始猫咪素材放到构建脚本要求的位置：
 
 ```sh
-./build.command        # 编译 + 打包成 奶灰.app
-./Tests/verify.command # 29 项桌宠自检
-./Tests/verify-ai.command # 7 组 AI 额度与联动测试
+mkdir -p 奶灰.app/Contents/Resources
+cp docs/images/cat-poses.png 奶灰.app/Contents/Resources/cats.png
+./build.command
 ```
 
-需要 Xcode 命令行工具，无需另外安装第三方包；Claude 缓存所需的 Zstandard 解码器随源码静态编译。
-
-发布新版本（需要私钥和 `gh`）：
+运行自检：
 
 ```sh
-Tools/release.command 3.0.4 "这次改了什么"
+./Tests/verify.command     # 29 项桌宠自检
+./Tests/verify-ai.command  # 7 组 AI 额度与联动测试
 ```
 
-## 目录
+发布流程见 `Tools/release.command`，需要发布私钥和 `gh`。
+
+### 源码目录
 
 | 位置 | 是什么 |
 | --- | --- |
@@ -65,10 +123,8 @@ Tools/release.command 3.0.4 "这次改了什么"
 | `Tools/relkey/`、`Tools/release.command` | 发布签名密钥工具与发布流程 |
 | `验收记录.md` | 每个版本实测了什么、边界在哪 |
 
-## Windows
+</details>
 
-暂时没有。现在这只猫是 AppKit + Metal + AVFoundation 写的，Windows 版等于换一套技术重做，做出来会在这里发布。更新源的格式已经按多平台留好位置（`windows` 字段）。
+## 素材说明
 
-## 素材
-
-猫的形象与动作片段由 AI 生成后抠像处理，仅供个人使用。
+猫咪形象与动作片段由 AI 生成后抠像处理，仅供个人使用。首页的猫咪和额度卡片截图来自实际应用。
