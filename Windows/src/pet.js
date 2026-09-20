@@ -79,19 +79,22 @@ function acceptState(s) {
   if (Number.isFinite(s.typeRate))
     typeRate = Math.max(0.25, Math.min(3, s.typeRate));
   if (active?.name === "type") active.video.playbackRate = typeRate;
-  externalSenses = s.senses || externalSenses;
-  const right = s.facingRight ?? s.direction > 0;
+  externalSenses = { ...externalSenses, ...s.senses };
+  const right =
+    s.facingRight ??
+    (Number.isFinite(s.direction) ? s.direction > 0 : facingRight);
   if (right !== facingRight) {
     flipFrom = currentFlip(performance.now());
     flipTo = right ? -1 : 1;
     flipAt = performance.now();
     facingRight = right;
   }
-  document.querySelector("#ai").textContent = s.sessions?.some(
-    (x) => x.state === "busy",
-  )
-    ? "AI⋯"
-    : "AI";
+  if (s.sessions)
+    document.querySelector("#ai").textContent = s.sessions.some(
+      (x) => x.state === "busy",
+    )
+      ? "AI⋯"
+      : "AI";
 }
 function cancelAction() {
   actionGeneration++;
@@ -150,6 +153,7 @@ async function playClip(name, loops = 1) {
   freeze();
   active = { name, video, clip: clips.get(name) };
   const continuous = company === name && ["type", "music"].includes(name);
+  const managedWalk = name === "walk" && prefs.systemCompanion;
   video.playbackRate = name === "type" ? typeRate : 1;
   api.command("phase", name);
   let n = 0;
@@ -157,6 +161,7 @@ async function playClip(name, loops = 1) {
     const onEnd = () => {
       n++;
       if (
+        (managedWalk && !pending) ||
         window.PetModel.repeatClip({
           name,
           completed: n,
@@ -479,7 +484,7 @@ function endPointer(e) {
   api.command("drag-end");
   if (!p.moved) {
     clearTimeout(clickTimer);
-    clickTimer = setTimeout(() => requestAction("wave"), 260);
+    clickTimer = setTimeout(() => api.command("interaction", "wave"), 260);
   }
 }
 canvas.addEventListener("pointerup", endPointer);
@@ -489,7 +494,7 @@ canvas.addEventListener("pointercancel", () => {
 });
 canvas.addEventListener("dblclick", () => {
   clearTimeout(clickTimer);
-  requestAction(pose === "sleep" ? "idle" : "sleep");
+  api.command("interaction", pose === "sleep" ? "idle" : "sleep");
 });
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
@@ -550,6 +555,26 @@ async function boot() {
     if (min !== 0 || max < 200) throw new Error(c.name + " alpha missing");
     probes.push(c.name);
   }
+  // Exercise partial native-pointer state updates and the real decoder loop.
+  acceptState({ direction: 1, sessions: [{ state: "busy" }] });
+  acceptState({ senses: { pointer: { x: CENTER_X + 30, y: GROUND - 80 } } });
+  if (!facingRight || document.querySelector("#ai").textContent !== "AI⋯")
+    throw new Error("局部鼠标状态覆盖了朝向或 AI 状态");
+  let walkLoops = 0;
+  const walkVideo = getVideo("walk");
+  const finishWalk = () => {
+    if (++walkLoops === 5) pending = "idle";
+  };
+  walkVideo.addEventListener("ended", finishWalk);
+  prefs = { ...prefs, systemCompanion: true };
+  try {
+    await playClip("walk", 4);
+  } finally {
+    walkVideo.removeEventListener("ended", finishWalk);
+    pending = null;
+  }
+  if (walkLoops !== 5) throw new Error("托管走路在计时结束前停止");
+  acceptState({ direction: -1, sessions: [] });
   await playClip("wave");
   active = null;
   await api.command("smoke-result", {
@@ -558,6 +583,8 @@ async function boot() {
     transparent: true,
     idleFrames: renderedFrames - startFrames,
     playbackCompleted: true,
+    managedWalkLoops: walkLoops,
+    partialStatePreserved: true,
   });
 }
 boot().catch((e) => {
