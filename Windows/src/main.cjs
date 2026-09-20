@@ -490,6 +490,7 @@ async function checkUpdates(manual = false) {
         });
       return;
     }
+    if (!manual && updateRelease?.version === release.version) return;
     updateRelease = release;
     tray?.setContextMenu(menu());
     if (!manual) {
