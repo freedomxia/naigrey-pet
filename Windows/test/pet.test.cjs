@@ -93,3 +93,30 @@ test("all shipped action frames fit the transparent window at both transition an
       );
     }
 });
+test("idle companion greets without clicks then autonomously chooses a full action", () => {
+  const { IdleCompanion } = require("../src/pet-model.cjs");
+  const idle = new IdleCompanion(() => 0.22);
+  assert.equal(idle.tick({ now: 0, pose: "idle" }), null);
+  assert.equal(idle.tick({ now: 5000, pose: "idle" }), "wave");
+  assert.equal(idle.tick({ now: 18000, pose: "idle" }), "stretch");
+});
+test("autonomous actions never interrupt dragging, manual sleep or an active clip", () => {
+  const { IdleCompanion } = require("../src/pet-model.cjs");
+  const idle = new IdleCompanion(() => 0.3);
+  for (const state of [
+    { busy: true },
+    { dragging: true },
+    { pose: "sleep" },
+    { enabled: false },
+  ])
+    assert.equal(idle.tick({ now: 6000, pose: "idle", ...state }), null);
+});
+test("an autonomous nap wakes up but a manually chosen sleep stays asleep", () => {
+  const { IdleCompanion } = require("../src/pet-model.cjs");
+  const idle = new IdleCompanion(() => 0.38);
+  idle.tick({ now: 5000, pose: "idle" });
+  assert.equal(idle.tick({ now: 20000, pose: "idle" }), "sleep");
+  assert.equal(idle.tick({ now: 51000, pose: "sleep", busy: true }), "idle");
+  idle.interact(52000);
+  assert.equal(idle.tick({ now: 90000, pose: "sleep", busy: true }), null);
+});

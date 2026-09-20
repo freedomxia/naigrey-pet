@@ -2,8 +2,11 @@
 const api = window.naigrey,
   canvas = document.querySelector("#cat"),
   ctx = canvas.getContext("2d", { willReadFrequently: true });
-const { actionPath, clipRect, walkDistance, sleepContinuation } =
+const { actionPath, clipRect, walkDistance, sleepContinuation, IdleCompanion } =
   window.PetModel;
+const companion = new IdleCompanion();
+let renderedFrames = 0,
+  smokeMode = false;
 const clips = new Map(),
   videos = new Map();
 let lastDraw = 0,
@@ -129,7 +132,8 @@ async function playClip(name, loops = 1) {
     video.play().catch(fail);
   });
 }
-async function requestAction(action) {
+async function requestAction(action, autonomous = false) {
+  if (!autonomous) companion.interact(performance.now());
   if (!ready) return;
   if (action === "sleep" && pose === "sleep") return;
   if (busy) {
@@ -175,6 +179,7 @@ async function requestAction(action) {
   }
 }
 function draw(now) {
+  renderedFrames++;
   ctx.setTransform(2, 0, 0, 2, 0, 0);
   ctx.clearRect(0, 0, 420, 260);
   if (active && active.video.readyState >= 2) {
@@ -219,6 +224,16 @@ function draw(now) {
         CAT_HEIGHT / metadata.sitHeight,
       ),
     );
+  if (!smokeMode) {
+    const chosen = companion.tick({
+      now,
+      pose,
+      busy,
+      dragging: !!pointer,
+      enabled: prefs.autonomous !== false,
+    });
+    if (chosen) requestAction(chosen, true);
+  }
   lastDraw = now;
   requestAnimationFrame(draw);
 }
@@ -302,6 +317,7 @@ api.on("state", (s) => {
 async function boot() {
   const state = await api.bootstrap();
   prefs = state.prefs;
+  smokeMode = state.smoke;
   metadata = await (await fetch("../assets/clips/clips.json")).json();
   for (const c of metadata.clips) clips.set(c.name, c);
   atlas = new Image();
@@ -324,6 +340,11 @@ async function boot() {
   // End-to-end smoke validates Chromium's real decoder and transparent pixels,
   // including all shipped clips. Main process only acts on result in --smoke-test.
   if (!state.smoke) return;
+  const startFrames = renderedFrames;
+  const startPixels = canvas.toDataURL();
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  if (renderedFrames - startFrames < 10 || canvas.toDataURL() === startPixels)
+    throw new Error("桌宠待机画布未持续更新");
   const probes = [];
   for (const c of metadata.clips) {
     const v = getVideo(c.name);
@@ -349,6 +370,7 @@ async function boot() {
     ok: true,
     clips: probes.length,
     transparent: true,
+    idleFrames: renderedFrames - startFrames,
     playbackCompleted: true,
   });
 }

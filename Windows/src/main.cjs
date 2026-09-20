@@ -46,6 +46,7 @@ let prefs = {
   quiet: false,
   countdown: true,
   motion: true,
+  autonomous: true,
   startup: false,
 };
 const prefsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -62,6 +63,7 @@ function load() {
       "quiet",
       "countdown",
       "motion",
+      "autonomous",
       "startup",
     ])
       if (typeof v[k] === "boolean") prefs[k] = v[k];
@@ -142,7 +144,7 @@ function showSettings() {
   }
   settingsWindow = windowFor("settings.html", {
     width: 380,
-    height: 430,
+    height: 470,
     resizable: false,
     title: "奶灰 · 设置",
     backgroundColor: "#f8f5ef",
@@ -387,6 +389,7 @@ app.whenReady().then(() => {
         "quiet",
         "countdown",
         "motion",
+        "autonomous",
         "startup",
       ].includes(value.key) &&
       typeof value.value === "boolean"

@@ -4,6 +4,7 @@ const fields = {
   notifications: "系统通知",
   sound: "通知声音",
   quiet: "夜间免打扰 · 22:00–08:00",
+  autonomous: "自主活动 · 走动、伸懒腰和小睡",
   motion: "额度提醒时招招手",
   startup: "开机启动",
 };

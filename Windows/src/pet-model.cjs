@@ -70,7 +70,44 @@
       Math.min(x + delta, area.x + Math.max(0, area.width - width)),
     );
   }
+  class IdleCompanion {
+    constructor(random = Math.random) {
+      this.random = random;
+      this.nextAt = 5000;
+      this.greeted = false;
+      this.wakeAt = null;
+    }
+    interact(now) {
+      this.nextAt = now + 6000;
+      this.wakeAt = null;
+    }
+    tick({ now, pose, busy = false, dragging = false, enabled = true }) {
+      if (!enabled || dragging) return null;
+      if (pose === "sleep" && this.wakeAt !== null && now >= this.wakeAt) {
+        this.wakeAt = null;
+        this.nextAt = now + 8000;
+        return "idle";
+      }
+      if (busy || pose !== "idle" || now < this.nextAt) return null;
+      this.nextAt = now + 8000 + this.random() * 8000;
+      if (!this.greeted) {
+        this.greeted = true;
+        return "wave";
+      }
+      const roll = this.random();
+      if (roll < 0.07) return "yawn";
+      if (roll < 0.2) return "wave";
+      if (roll < 0.25) return "stretch";
+      if (roll < 0.37) return "walk";
+      if (roll < 0.4) {
+        this.wakeAt = now + 15000 + this.random() * 15000;
+        return "sleep";
+      }
+      return null;
+    }
+  }
   const api = {
+    IdleCompanion,
     advanceWalk,
     sleepContinuation,
     actionPath,
