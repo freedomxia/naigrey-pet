@@ -94,10 +94,30 @@ internal static class Program {
 internal static class AudioActivity {
     private static void Release(object value) { if(value!=null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
     internal static bool? Read() {
-        IMMDeviceEnumerator devices=null;IMMDevice device=null;IAudioSessionManager2 manager=null;IAudioSessionEnumerator sessions=null;
+        IMMDeviceEnumerator devices=null;IMMDeviceCollection endpoints=null;
         try {
             devices=(IMMDeviceEnumerator)new MMDeviceEnumerator();
-            if(devices.GetDefaultAudioEndpoint(0,1,out device)<0) return null; // render, multimedia
+            // eRender + DEVICE_STATE_ACTIVE: apps may play on a nondefault output.
+            if(devices.EnumAudioEndpoints(0,1,out endpoints)<0)return null;
+            uint count;if(endpoints.GetCount(out count)<0)return null;
+            bool observed=false;
+            for(uint i=0;i<Math.Min(count,64u);i++) {
+                IMMDevice device=null;
+                try {
+                    if(endpoints.Item(i,out device)<0)continue;
+                    bool? active=ReadDevice(device);
+                    if(active==true)return true;
+                    if(active.HasValue)observed=true;
+                } catch { /* Continue if an endpoint disappears during enumeration. */ }
+                finally { Release(device); }
+            }
+            return observed ? (bool?)false : null;
+        } catch { return null; }
+        finally { Release(endpoints);Release(devices); }
+    }
+    private static bool? ReadDevice(IMMDevice device) {
+        IAudioSessionManager2 manager=null;IAudioSessionEnumerator sessions=null;
+        try {
             object activated;Guid iid=typeof(IAudioSessionManager2).GUID;
             if(device.Activate(ref iid,23,IntPtr.Zero,out activated)<0)return null;
             manager=(IAudioSessionManager2)activated;
@@ -119,18 +139,23 @@ internal static class AudioActivity {
             }
             return false;
         } catch { return null; }
-        finally { Release(sessions);Release(manager);Release(device);Release(devices); }
+        finally { Release(sessions);Release(manager); }
     }
 }
 
 [ComImport,Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] internal class MMDeviceEnumerator {}
 [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator {
-    [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IntPtr collection);
+    [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection collection);
     [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device);
     [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device);
     [PreserveSig]int RegisterEndpointNotificationCallback(IntPtr callback);
     [PreserveSig]int UnregisterEndpointNotificationCallback(IntPtr callback);
+}
+[ComImport,Guid("0BD7A1BE-7A1A-44DB-8397-C0A7A7C922B9"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceCollection {
+    [PreserveSig]int GetCount(out uint count);
+    [PreserveSig]int Item(uint index,out IMMDevice device);
 }
 [ComImport,Guid("D666063F-1587-4E43-81F1-B948E807363F"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDevice {

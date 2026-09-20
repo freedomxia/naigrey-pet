@@ -6,7 +6,7 @@
 
 `native/Naigrey.Senses.cs` 用 `WH_KEYBOARD_LL` 监听按下事件，只记录单调时钟时间。回调不读取 `KBDLLHOOKSTRUCT`，不提取键码、字符、窗口标题或输入文本。主进程只收到距上次按键的秒数；鼠标活动不会误当作打字。主线程运行 Windows 消息循环，Core Audio 查询在独立 MTA 线程执行，不阻塞键盘回调。键盘来源不可用时明确输出 `keyboardAvailable:false`。
 
-音频来源是默认 multimedia 输出设备的 Core Audio 会话状态：排除系统声音、桌宠主进程及同名媒体子进程、静音或音量为零的会话，仅检查 `AudioSessionStateActive`。不打开捕获流，不读取音频样本。没有输出设备或 COM 调用失败时输出 null，由 JS 标记 `audioAvailable:false`。在开发环境中父程序名为 Electron 时，其他同名 Electron 音频进程也会被排除；安装后的产品名称独立。
+音频来源是所有活动输出设备（最多 64 个）的 Core Audio 会话状态：排除系统声音、桌宠主进程及同名媒体子进程、静音或音量为零的会话，仅检查 `AudioSessionStateActive`。非默认输出设备上的应用音频同样参与判断，设备移除时会继续检查其他设备。不打开捕获流，不读取音频样本。没有输出设备或所有设备均无法读取时输出 null，由 JS 标记 `audioAvailable:false`。在开发环境中父程序名为 Electron 时，其他同名 Electron 音频进程也会被排除；安装后的产品名称独立。
 
 与 Mac 相同，连续音频活动 8 秒进入听音乐，静止 4 秒退出；短提示音不触发。打字需最近 6 秒内至少 8 次可观察按键变化、持续至少 2.5 秒，最近按键年龄小于 1.2 秒；停顿超过 2 秒退出。打字动画速率限制为 0.7–1.4 倍。检测的是播放会话活动，不断言声音内容就是音乐。
 
