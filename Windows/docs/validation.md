@@ -5,8 +5,8 @@
 ## 已验证
 
 - Node 134 项测试通过，含实际主进程初始化/IPC、动作取消竞态、原生双击间隔、原 Swift 动画参数对照、所有视频实际alpha边界、额度/提醒/续期/会话/更新规则。
-- [Windows CI 35490143068](https://github.com/freedomxia/naigrey-pet/actions/runs/35490143068)：134项测试通过；C#原生helper编译成功，keyboardAvailable=true；持续传感器协议与进程身份检查NATIVE_TRANSPORT_OK。
-- Windows打包程序 smoke：16段透明动画，722次累计待机帧更新，完整动作播放，连续走路5圈（超过原4圈截止），局部状态更新不破坏方向/AI指示。
+- [Windows CI 35490792288](https://github.com/freedomxia/naigrey-pet/actions/runs/35490792288)：134项测试通过；C#原生helper编译成功，keyboardAvailable=true；持续传感器协议与进程身份检查NATIVE_TRANSPORT_OK。
+- Windows打包程序 smoke：16段透明动画，701次累计待机帧更新，完整动作播放，连续走路5圈（超过原4圈截止），局部状态更新不破坏方向/AI指示。
 - NSIS x64安装包及便携ZIP构建完成，随包提供SHA256SUMS.txt。
 - 本机Electron smoke同样通过。独立审查发现的大尺寸裁切、旧视频失败覆盖新动作、续期时机、进程PID竞态、双击误挥手、旧会话提醒等已修复并回归测试。
 

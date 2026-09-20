@@ -4,7 +4,7 @@
 
 ## 安装与使用
 
-下载 [Windows x64 预览包](https://github.com/freedomxia/naigrey-pet/actions/runs/35490143068/artifacts/10598896634)，解压后运行 `naigrey-windows-0.2.0-x64-setup.exe` 安装；也可解压其中的便携 ZIP，运行 `奶灰桌宠.exe`。GitHub Actions 工件需要登录 GitHub 下载，保留 14 天。
+下载 [Windows x64 预览包](https://github.com/freedomxia/naigrey-pet/actions/runs/35490792288/artifacts/10598329741)，解压后运行 `naigrey-windows-0.2.0-x64-setup.exe` 安装；也可解压其中的便携 ZIP，运行 `奶灰桌宠.exe`。GitHub Actions 工件需要登录 GitHub 下载，保留 14 天。
 
 [Windows 自动构建](../.github/workflows/windows.yml)已启用。成功运行会提供 `naigrey-windows-x64-preview` 工件，包含 NSIS 安装程序、便携 ZIP 和 SHA-256 校验文件。构建记录见 [GitHub Actions](https://github.com/freedomxia/naigrey-pet/actions/workflows/windows.yml)。
 
