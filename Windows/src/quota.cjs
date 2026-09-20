@@ -607,6 +607,9 @@ class QuotaService extends EventEmitter {
         }
         await this.#considerRenewal(true);
         if (!valid()) return;
+        currentFingerprint = await this.#claude.identity();
+        if (!valid()) return;
+        this.#rememberIdentity(state, currentFingerprint, false);
         const local = await this.#claude.local(controller.signal);
         if (!valid()) return;
         if (local) {

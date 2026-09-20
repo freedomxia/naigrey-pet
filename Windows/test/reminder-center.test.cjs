@@ -341,3 +341,50 @@ test("known account switch clears private reminder history even when new usage r
   center.drain({ usage: service.snapshot(), canPresent: true });
   assert.equal(center.snapshot().history.length, 0);
 });
+test("Claude organization change clears history even while OAuth is backing off", async (t) => {
+  const fs = require("node:fs/promises"),
+    os = require("node:os"),
+    path = require("node:path"),
+    { QuotaService } = require("../src/quota.cjs");
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "reminder-claude-"));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.mkdir(path.join(home, ".claude"));
+  await fs.writeFile(
+    path.join(home, ".claude", ".credentials.json"),
+    JSON.stringify({
+      claudeAiOauth: { accessToken: "fixture", expiresAt: now + 1e8 },
+    }),
+  );
+  const account = path.join(home, ".claude.json"),
+    write = (org) =>
+      fs.writeFile(
+        account,
+        JSON.stringify({ oauthAccount: { organizationUuid: org } }),
+      );
+  await write("a");
+  let calls = 0;
+  const service = new QuotaService({
+    home,
+    env: {},
+    now: () => now,
+    fetchImpl: async () =>
+      ++calls === 1
+        ? new Response(
+            JSON.stringify({
+              five_hour: { utilization: 90, resets_at: iso(now + 18000000) },
+            }),
+          )
+        : new Response("", { status: 429 }),
+  });
+  t.after(() => service.stop());
+  const center = new ReminderCenter({ now: () => now });
+  service.on("reminder", (e) => center.accept([e], service.snapshot(), [], {}));
+  await service.connect("claude");
+  await service.refresh();
+  assert.equal(center.snapshot().history.length, 1);
+  await write("b");
+  await service.refresh();
+  assert.equal(calls, 2);
+  center.drain({ usage: service.snapshot(), canPresent: true });
+  assert.equal(center.snapshot().history.length, 0);
+});
