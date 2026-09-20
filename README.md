@@ -10,7 +10,7 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-555555?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-555555?style=flat-square)
 
-[**下载 macOS 安装包**](https://github.com/freedomxia/naigrey-pet/releases/latest/download/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
+[**Windows 安装程序（.exe）**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.0/naigrey-windows-0.2.0-x64-setup.exe) · [**macOS 下载（.zip）**](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
 
 <img src="docs/images/cat-poses.png" alt="奶灰小猫的六种形象：坐着、眯眼、招手、睡觉、打哈欠和走路" width="760">
 
@@ -61,11 +61,19 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 
 ## 安装，只需几步
 
-1. [下载安装包 naigrey-mac.zip](https://github.com/freedomxia/naigrey-pet/releases/latest/download/naigrey-mac.zip)。
+### Windows 10 / 11（64 位）
+
+1. [**下载 Windows 安装程序：naigrey-windows-0.2.0-x64-setup.exe**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.0/naigrey-windows-0.2.0-x64-setup.exe)。
+2. 如果旧版正在运行，先从托盘退出奶灰。
+3. 双击下载的 **`.exe`** 文件，按安装向导完成安装，再打开桌面快捷方式。
+
+**不用下载压缩包，也不用解压。** GitHub Releases 中的 `Source code (zip)` / `Source code (tar.gz)` 是开发源码，不是安装程序。详细说明见 [Windows 使用说明](Windows/README.md)。
+
+### macOS 13+（Apple 芯片）
+
+1. [下载 macOS：naigrey-mac.zip](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip)。
 2. 解压，把 `奶灰.app` 拖进「应用程序」。
 3. 双击打开，在菜单栏找到猫爪图标。
-
-支持 **macOS 13 或更新版本、Apple 芯片**。Windows 预览版正在独立开发，见 [Windows 安装与开发说明](Windows/README.md)。
 
 > 当前安装包使用本机 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被系统拦截，可右键图标选择「打开」，或到「系统设置 → 隐私与安全性」查看「仍要打开」。
 
