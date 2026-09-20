@@ -8,7 +8,7 @@ Ball physics is a dependency-free port of Source/Ball.swift, including gravity 1
 
 ## Integration interface
 
-- `state.prefs.catHeight`: 72/100/130/140/170 CSS pixels; ground 247 in a 420×260 window.
+- `state.prefs.catHeight`: 72/100/130/140/170 CSS pixels; ground 307 in a 520×320 window (CENTER_X 260).
 - `state.prefs.systemCompanion=true`: disable renderer fallback autonomous controller.
 - `state.company`: typing/type/music or none/null. Continuous loop while matching; exits through typeOut/musicOut.
 - `state.typeRate`: typing rate, clamped .25–3.
@@ -21,10 +21,14 @@ Ball physics is a dependency-free port of Source/Ball.swift, including gravity 1
 
 ## Verification
 
-Tests were written first and failed on missing motion/ball modules. 26 subsystem tests now pass, including 1232 parameters compared with the unchanged Swift reference, all packed map sizes/alpha channels, per-part idle activation, all pose parameter finiteness, planted stride, mouth busy gates, ball trajectories/fling cap, company indefinite loops, hand-off mirroring, and clip movement windows.
+Tests were written first and failed on missing motion/ball modules. 30 subsystem tests now pass, including 1232 parameters compared with the unchanged Swift reference, all packed map sizes/alpha channels, per-part idle activation, all pose parameter finiteness, planted stride, mouth busy gates, ball trajectories/fling cap, company indefinite loops, hand-off mirroring, and clip movement windows.
 
 Live Electron smoke on macOS compiled WebGL2, loaded/decompressed masks, rendered hundreds of changing idle frames, decoded all 16 transparent clips and completed playback. A real Chromium screenshot was captured and visually inspected: original cat art renders at expected ground and size. Root will run integrated smoke after wiring the controller.
 
 ## Limits
 
 Actual Windows GPU, native pointer hit-testing, multiple monitors and installed NSIS execution require Windows CI/manual validation. Export requires macOS but shipped data/rendering are portable. Stochastic schedules preserve Swift distributions, not Swift RNG bit identity. GLSL/WebGL and Metal may differ slightly at transparent sampling edges. Main-process routine/session/ball controller behavior is root-owned and outside this commit.
+
+## Review fixes
+
+Expanded the logical viewport to 520×320 (ground307, center260) after decoding every frame of all 16 clips and finding both vertical and horizontal visible-pixel clipping at size170. The alpha-bound fixture includes SHA256 media hashes and tests all supported sizes, both orientations and both anchor endpoints. Added an actual-pet.js VM regression proving that a cancelled decoder error cannot reset a newer action. Renderer catch now rejects stale generation failures before changing state.

@@ -1,0 +1,165 @@
+{
+  "source": "All shipped VP9 frames decoded by ffmpeg -c:v libvpx-vp9 as RGBA; bounds union of alpha >35, right/bottom exclusive",
+  "clips": {
+    "standUp": {
+      "bounds": [
+        10,
+        10,
+        990,
+        708
+      ],
+      "frames": 130,
+      "sha256": "b667f7e514df92d5551fb0f75b4b571f2926af3e81c62be4e3ea353998e38c94"
+    },
+    "walk": {
+      "bounds": [
+        10,
+        11,
+        828,
+        557
+      ],
+      "frames": 17,
+      "sha256": "4c3914190744c9286155a9b9f2ebce224b8d7585412f92b2b7945d5174d1c5a5"
+    },
+    "sitDown": {
+      "bounds": [
+        10,
+        10,
+        1032,
+        638
+      ],
+      "frames": 76,
+      "sha256": "a52ac122fd84cb14760bbc868aed5394978b76e6e56031293260a0eb0a88c263"
+    },
+    "wave": {
+      "bounds": [
+        10,
+        10,
+        505,
+        486
+      ],
+      "frames": 101,
+      "sha256": "7360c823568d026df7b0e56cf72a3936fb84f3c7d9a94260109fd6a483cbbe76"
+    },
+    "yawn": {
+      "bounds": [
+        11,
+        10,
+        491,
+        465
+      ],
+      "frames": 91,
+      "sha256": "ea0d6fc9a7f86c7433b6b96541016dd3cf7130295aa8db3de60074007bd877fe"
+    },
+    "stretch": {
+      "bounds": [
+        10,
+        10,
+        622,
+        658
+      ],
+      "frames": 206,
+      "sha256": "4e6caf9b7f41e5b94d3fef7614be9b465522ea727a666dff795eced98de9eb28"
+    },
+    "lieDown": {
+      "bounds": [
+        10,
+        10,
+        827,
+        463
+      ],
+      "frames": 102,
+      "sha256": "cfe147a07438e04e679fea45612b6774b0220d022e1c71a162672ac54dd5e43d"
+    },
+    "sleep": {
+      "bounds": [
+        10,
+        10,
+        710,
+        342
+      ],
+      "frames": 100,
+      "sha256": "1e9ef7dd7f64fa44e31edac01f320655ad04487d2e772f83252906a6aded9bf4"
+    },
+    "wake": {
+      "bounds": [
+        24,
+        100,
+        872,
+        632
+      ],
+      "frames": 180,
+      "sha256": "b4cc88b744240208d8b70c3045785debb7a876971fd7d7811f52ec9d8f6dc46b"
+    },
+    "play": {
+      "bounds": [
+        10,
+        10,
+        886,
+        488
+      ],
+      "frames": 178,
+      "sha256": "72d2f94afca18e316f1202af4eb4b470c1bbbdce60cee50e58bfd3f9f89092b7"
+    },
+    "musicIn": {
+      "bounds": [
+        10,
+        0,
+        586,
+        690
+      ],
+      "frames": 48,
+      "sha256": "ba7e6b81ed6c0e752459fd257e0417c61d45248b98dc0ba672ad883b3badf096"
+    },
+    "music": {
+      "bounds": [
+        10,
+        10,
+        576,
+        517
+      ],
+      "frames": 34,
+      "sha256": "0583e4f991decd5cbc0214cccfe0420a2d43e8192509d1a8e3566c8472f81c8d"
+    },
+    "musicOut": {
+      "bounds": [
+        10,
+        0,
+        588,
+        691
+      ],
+      "frames": 68,
+      "sha256": "09abf8fd9adc05b847840afb0e799df6f881562fa80d77fe6acbd3a3ff4e2293"
+    },
+    "typeIn": {
+      "bounds": [
+        10,
+        10,
+        1022,
+        484
+      ],
+      "frames": 45,
+      "sha256": "175312ef1bd842ca4581482532575f2f255b5a91be1aecc9e6c5f2883bd4cb7b"
+    },
+    "type": {
+      "bounds": [
+        10,
+        12,
+        734,
+        416
+      ],
+      "frames": 10,
+      "sha256": "076933fbc8ff3771a3e3c5526e23de70aaf81894ca915fc5c3999de5a9bbb2cb"
+    },
+    "typeOut": {
+      "bounds": [
+        10,
+        10,
+        1010,
+        478
+      ],
+      "frames": 31,
+      "sha256": "07376c38a2e6a8402336be6ae14c194fc13b3942a84dfb6c594a7ca93bf0f693"
+    }
+  }
+}

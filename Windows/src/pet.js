@@ -23,7 +23,7 @@ let lastDraw = 0,
   ready = false;
 let prefs = { motion: true },
   lastHit = true;
-const GROUND = 247;
+const { GROUND, WINDOW_HEIGHT, WINDOW_WIDTH, CENTER_X } = window.PetModel;
 function bubble(text) {
   const el = document.querySelector("#bubble");
   el.textContent = text;
@@ -106,8 +106,8 @@ function cancelAction() {
 
 function freeze() {
   const c = document.createElement("canvas");
-  c.width = 840;
-  c.height = 520;
+  c.width = WINDOW_WIDTH * 2;
+  c.height = WINDOW_HEIGHT * 2;
   c.getContext("2d").drawImage(canvas, 0, 0);
   fade = c;
   fadeAt = performance.now();
@@ -174,7 +174,7 @@ async function playClip(name, loops = 1) {
             clips.get(name),
             metadata.sitHeight,
             catHeight(),
-            210,
+            CENTER_X,
             GROUND,
             !facingRight,
           );
@@ -254,16 +254,13 @@ async function requestAction(action, autonomous = false) {
         } while (!pending);
         break;
       }
-      if (
-        ["type", "music"].includes(name) &&
-        companyAction &&
-        company !== name
-      )
+      if (["type", "music"].includes(name) && companyAction && company !== name)
         continue;
       await playClip(name, ["type", "music", "walk"].includes(name) ? 4 : 1);
     }
     if (action !== "sleep") pose = "idle";
   } catch {
+    if (generation !== actionGeneration) return;
     active = null;
     pose = "idle";
     api.command("phase", "idle");
@@ -279,7 +276,7 @@ async function requestAction(action, autonomous = false) {
 function draw(now) {
   renderedFrames++;
   ctx.setTransform(2, 0, 0, 2, 0, 0);
-  ctx.clearRect(0, 0, 420, 260);
+  ctx.clearRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
   if (active && active.video.readyState >= 2) {
     const c = active.clip;
     const rect = clipRect(
@@ -287,7 +284,7 @@ function draw(now) {
       active.video.currentTime / c.duration,
       metadata.sitHeight,
       catHeight(),
-      210,
+      CENTER_X,
       GROUND,
     );
     const flip = ["walk", "standUp", "sitDown"].includes(active.name)
@@ -296,9 +293,9 @@ function draw(now) {
         ? -1
         : 1;
     ctx.save();
-    ctx.translate(210, 0);
+    ctx.translate(CENTER_X, 0);
     ctx.scale(flip, 1);
-    ctx.translate(-210, 0);
+    ctx.translate(-CENTER_X, 0);
     ctx.drawImage(active.video, rect.x, rect.y, rect.width, rect.height);
     ctx.restore();
   } else if (renderer) {
@@ -309,7 +306,7 @@ function draw(now) {
     let sensed = null;
     if (pt) {
       sensed = {
-        x: (pt.x - (210 - (r.width * scale) / 2)) / scale,
+        x: (pt.x - (CENTER_X - (r.width * scale) / 2)) / scale,
         y: (pt.y - (GROUND - (r.height - 40) * scale)) / scale,
       };
       if (lastPointerSample) {
@@ -344,7 +341,10 @@ function draw(now) {
     // Mac carried pose and soft landing, applied around the paw line.
     if (pointer?.moved) {
       const u = (now - liftAt) / 1000;
-      ctx.translate(210, GROUND - h * 0.06 * window.PetMotion.ease(u / 0.18));
+      ctx.translate(
+        CENTER_X,
+        GROUND - h * 0.06 * window.PetMotion.ease(u / 0.18),
+      );
       ctx.rotate(
         -window.PetMotion.keys(u % 1.1, [
           [0, 0],
@@ -358,7 +358,7 @@ function draw(now) {
         1 - 0.03 * window.PetMotion.ease(u / 0.2),
         1 + 0.04 * window.PetMotion.ease(u / 0.2),
       );
-      ctx.translate(-210, -GROUND);
+      ctx.translate(-CENTER_X, -GROUND);
     } else if (now - releaseAt < 500) {
       const t = (now - releaseAt) / 1000,
         K = window.PetMotion.keys,
@@ -368,7 +368,7 @@ function draw(now) {
           [0.3, 0.018],
           [0.4, 0],
         ]);
-      ctx.translate(210, GROUND - h * bounce);
+      ctx.translate(CENTER_X, GROUND - h * bounce);
       ctx.scale(
         K(t, [
           [0, 0.97],
@@ -383,14 +383,14 @@ function draw(now) {
           [0.5, 1],
         ]),
       );
-      ctx.translate(-210, -GROUND);
+      ctx.translate(-CENTER_X, -GROUND);
     }
     ctx.drawImage(
       renderer.render(motion, "idle", { height: h }),
       0,
       0,
-      420,
-      260,
+      WINDOW_WIDTH,
+      WINDOW_HEIGHT,
     );
     ctx.restore();
   }
@@ -398,7 +398,7 @@ function draw(now) {
     const a = 1 - (now - fadeAt) / 120;
     if (a > 0) {
       ctx.globalAlpha = a;
-      ctx.drawImage(fade, 0, 0, 420, 260);
+      ctx.drawImage(fade, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
       ctx.globalAlpha = 1;
     } else fade = null;
   }
@@ -440,8 +440,8 @@ function hit(e) {
   return (
     x >= 0 &&
     y >= 0 &&
-    x < 840 &&
-    y < 520 &&
+    x < WINDOW_WIDTH * 2 &&
+    y < WINDOW_HEIGHT * 2 &&
     ctx.getImageData(x, y, 1, 1).data[3] > 35
   );
 }

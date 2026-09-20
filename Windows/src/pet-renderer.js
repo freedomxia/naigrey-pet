@@ -44,8 +44,8 @@ void main(){
     constructor(data) {
       this.data = data;
       this.canvas = document.createElement("canvas");
-      this.canvas.width = 840;
-      this.canvas.height = 520;
+      this.canvas.width = root.PetModel.WINDOW_WIDTH * 2;
+      this.canvas.height = root.PetModel.WINDOW_HEIGHT * 2;
       const gl = (this.gl = this.canvas.getContext("webgl2", {
         alpha: true,
         premultipliedAlpha: true,
@@ -153,7 +153,13 @@ void main(){
     render(
       motion,
       pose = "idle",
-      { height = 140, cx = 210, ground = 247, flip = 1, opacity = 1 } = {},
+      {
+        height = 140,
+        cx = root.PetModel.CENTER_X,
+        ground = root.PetModel.GROUND,
+        flip = 1,
+        opacity = 1,
+      } = {},
     ) {
       const g = this.gl;
       g.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -180,10 +186,20 @@ void main(){
         const width = r.width * scale,
           h = r.height * scale,
           center = cx + shift * scale * flip;
-        const left = ((center - (width * abs(flip)) / 2) / 420) * 2 - 1,
-          right = ((center + (width * abs(flip)) / 2) / 420) * 2 - 1,
-          top = 1 - ((ground - (r.height - 40) * scale) / 260) * 2,
-          bottom = 1 - ((ground + 40 * scale) / 260) * 2;
+        const left =
+            ((center - (width * abs(flip)) / 2) / root.PetModel.WINDOW_WIDTH) *
+              2 -
+            1,
+          right =
+            ((center + (width * abs(flip)) / 2) / root.PetModel.WINDOW_WIDTH) *
+              2 -
+            1,
+          top =
+            1 -
+            ((ground - (r.height - 40) * scale) / root.PetModel.WINDOW_HEIGHT) *
+              2,
+          bottom =
+            1 - ((ground + 40 * scale) / root.PetModel.WINDOW_HEIGHT) * 2;
         const u0 = flip < 0 ? r.width : 0,
           u1 = flip < 0 ? 0 : r.width;
         g.bufferData(

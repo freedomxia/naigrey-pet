@@ -183,3 +183,43 @@ test("play hands the yarn ball to the native window at the last video position a
   assert.equal(a.velocity.x, -b.velocity.x);
   assert.equal(a.point.y, b.point.y);
 });
+test("logical viewport includes headroom for largest 170px action", () => {
+  const { WINDOW_HEIGHT, GROUND } = require("../src/pet-model.cjs");
+  assert.equal(WINDOW_HEIGHT, 320);
+  assert.equal(GROUND, 307);
+});
+test("all decoded visible action pixels fit both orientations at every supported size", () => {
+  const {
+    WINDOW_WIDTH,
+    WINDOW_HEIGHT,
+    CENTER_X,
+    GROUND,
+  } = require("../src/pet-model.cjs");
+  const { clips, sitHeight } = require("../assets/clips/clips.json");
+  const alpha = require("./fixtures/clip-alpha-bounds.json").clips;
+  for (const height of [72, 100, 130, 140, 170])
+    for (const c of clips)
+      for (const t of [0, 1]) {
+        const r = clipRect(c, t, sitHeight, height, CENTER_X, GROUND),
+          s = height / sitHeight,
+          b = alpha[c.name].bounds;
+        assert.ok(r.y + b[1] * s >= 0, `${c.name} ${height} top`);
+        assert.ok(
+          r.y + b[3] * s <= WINDOW_HEIGHT,
+          `${c.name} ${height} bottom`,
+        );
+        const left = r.x + b[0] * s,
+          right = r.x + b[2] * s;
+        for (const mirrored of [false, true]) {
+          assert.ok(
+            (mirrored ? WINDOW_WIDTH - right : left) >= 0,
+            `${c.name} ${height} left`,
+          );
+          assert.ok(
+            (mirrored ? WINDOW_WIDTH - left : right) <= WINDOW_WIDTH,
+            `${c.name} ${height} right`,
+          );
+        }
+      }
+});
+test('decoded alpha-bound fixture belongs to the exact shipped video bytes',()=>{const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');for(const [name,evidence]of Object.entries(require('./fixtures/clip-alpha-bounds.json').clips)){const bytes=fs.readFileSync(path.join(__dirname,'../assets/clips',name+'.webm'));assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),evidence.sha256,`${name}: regenerate alpha bounds after replacing media`);assert.ok(evidence.frames>1);}});

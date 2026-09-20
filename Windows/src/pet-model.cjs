@@ -1,5 +1,9 @@
 /* Shared, dependency-free geometry and animation transitions. */
 (function (root) {
+  const WINDOW_WIDTH = 520,
+    WINDOW_HEIGHT = 320,
+    CENTER_X = 260,
+    GROUND = 307;
   const paths = {
     idle: ["idle"],
     wave: ["wave", "idle"],
@@ -158,6 +162,10 @@
     }
   }
   const api = {
+    WINDOW_WIDTH,
+    WINDOW_HEIGHT,
+    CENTER_X,
+    GROUND,
     IdleCompanion,
     advanceWalk,
     sleepContinuation,

@@ -4,22 +4,22 @@
 html,
 body {
   margin: 0;
-  width: 420px;
-  height: 260px;
+  width: 520px;
+  height: 320px;
   overflow: hidden;
   background: transparent;
   user-select: none;
 }
 canvas {
-  width: 420px;
-  height: 260px;
+  width: 520px;
+  height: 320px;
   position: absolute;
   inset: 0;
 }
 button {
   position: absolute;
-  left: 290px;
-  top: 214px;
+  left: 340px;
+  top: 274px;
   border: 1px solid #fff9;
   background: #665675de;
   color: white;
