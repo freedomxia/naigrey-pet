@@ -64,6 +64,7 @@ let petReady = false,
   typeRate = 1;
 let timer,
   tickTimer,
+  updateTimer,
   physicsTimer,
   sessionBusy = false,
   sessions = [],
@@ -83,7 +84,9 @@ let ball = null,
   updating = false;
 const cliPids = new Set(),
   sessionRules = new SessionRules(),
-  reminders = new ReminderCenter(),
+  reminders = new ReminderCenter({
+    stateDirectory: smoke || demo ? undefined : app.getPath("userData"),
+  }),
   presentationQueue = [];
 const booleanPrefs = [
   "notifications",
@@ -476,6 +479,7 @@ function stepBall() {
 }
 async function checkUpdates(manual = false) {
   if (smoke || demo || updating) return;
+  updating = true;
   try {
     const release = await updater.check({ force: manual });
     if (!release) {
@@ -504,12 +508,12 @@ async function checkUpdates(manual = false) {
       cancelId: 1,
     });
     if (choice.response !== 0) return;
-    updating = true;
     const file = await updater.download(release);
     const error = await shell.openPath(file);
     if (error) throw new Error("installer");
     app.quit();
   } catch {
+    await updater.cleanup();
     if (manual)
       dialog.showMessageBox(pet, {
         type: "error",
@@ -696,6 +700,7 @@ function tick() {
     if (inApp) {
       present("bubble", event.body);
       if (prefs.motion) present("action", "blink");
+      if (prefs.sound) shell.beep();
     } else if (prefs.notifications)
       new Notification({
         title: event.title,
@@ -705,6 +710,7 @@ function tick() {
   }
   send(pet, "state", snapshot());
   if (panel.isVisible()) send(panel, "state", snapshot());
+  if (settingsWindow?.isVisible()) send(settingsWindow, "state", snapshot());
 }
 if (primary)
   app.whenReady().then(() => {
@@ -737,10 +743,7 @@ if (primary)
     service.on("reminder", (r) => {
       reminders.accept([r], service.snapshot(), sessions, reminderPrefs());
     });
-    service.on("renewal", (r) => {
-      if (r.status === "failed")
-        present("bubble", r.message || "Claude 登录续期未完成，请重新登录。");
-    });
+    // Renewal failures are reflected in provider status; respect reminder muting.
     const area = screen.getPrimaryDisplay().workArea;
     const position = clampPosition(
       prefs.position || {
@@ -1063,12 +1066,18 @@ if (primary)
     );
     powerMonitor.on("suspend", () => {
       suspended = true;
+      reminders.clearPending();
+      sessions = [];
+      sessionRules.observe([]);
       service.stop();
       senses.stop();
       reader.clearCache();
       sessionGeneration++;
     });
     powerMonitor.on("resume", () => {
+      reminders.clearPending();
+      sessions = [];
+      sessionRules.observe([]);
       suspended = false;
       if (!demo && !smoke) service.start();
       if (!smoke) senses.start();
@@ -1093,6 +1102,9 @@ if (primary)
         for (const p of prefs.providers) void service.connect(p);
         service.start();
         void checkUpdates();
+        updateTimer = setInterval(() => {
+          if (!suspended) void checkUpdates();
+        }, 3600000);
       }
     }
   });
@@ -1104,6 +1116,7 @@ app.on("before-quit", () => {
   quitting = true;
   clearTimeout(timer);
   clearInterval(tickTimer);
+  clearInterval(updateTimer);
   clearInterval(physicsTimer);
   sessionGeneration++;
   reader?.clearCache();

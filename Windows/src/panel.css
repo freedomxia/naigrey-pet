@@ -120,3 +120,33 @@ footer {
 button:focus-visible {
   outline: 2px solid #8d79a1;
 }
+body {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+main {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.stale .value {
+  color: #9a928a;
+}
+.stale progress::-webkit-progress-value {
+  background: #b9b2ac;
+}
+#sessions {
+  font-size: 10px;
+  margin-top: 4px;
+  color: #81776e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+footer {
+  flex-shrink: 0;
+}
+header {
+  flex-shrink: 0;
+}

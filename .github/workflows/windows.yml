@@ -26,6 +26,11 @@ jobs:
           cache-dependency-path: Windows/package-lock.json
       - run: npm ci
       - run: npm test
+      - name: Build and test native Windows sensing
+        shell: pwsh
+        run: |
+          ./scripts/build-native.ps1
+          ./scripts/test-native.ps1
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

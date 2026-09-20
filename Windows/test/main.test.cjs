@@ -243,7 +243,7 @@ test("suspend and resume discard pending presentation and old session evidence",
   h.run(
     "sessions=[{provider:'codex',id:'old',state:'waiting',evidence:'explicit'}];reminders.accept([{provider:'codex',kind:'waiting',sessionID:'old',body:'waiting'}],[],sessions,{})",
   );
-  assert.equal(h.bootstrap().reminders.history.length,1);
+  assert.equal(h.bootstrap().reminders.history.length, 1);
   h.powerMonitor.emit("suspend");
   assert.equal(h.run("suspended"), true);
   assert.equal(h.bootstrap().sessions.length, 0);
@@ -253,7 +253,7 @@ test("suspend and resume discard pending presentation and old session evidence",
     ),
     null,
   );
-  assert.equal(h.bootstrap().reminders.history.length,1);
+  assert.equal(h.bootstrap().reminders.history.length, 1);
   h.powerMonitor.emit("resume");
   assert.equal(h.run("suspended"), false);
   assert.equal(h.bootstrap().sessions.length, 0);
@@ -262,5 +262,22 @@ test("suspend and resume discard pending presentation and old session evidence",
       "reminders.drain({sessions:[{provider:'codex',id:'old',state:'waiting',evidence:'explicit'}],canPresent:true})",
     ),
     null,
+  );
+});
+test("visible settings receive session and sensor changes without a quota event", async (t) => {
+  const h = await harness(t);
+  await h.command("settings");
+  h.run(
+    'settingsWindow.show();sessions=[{provider:"codex",id:"active",state:"busy",evidence:"explicit"}]',
+  );
+  h.events.length = 0;
+  h.run("tick()");
+  assert.ok(
+    h.events.some(
+      (e) =>
+        e.window.file.endsWith("settings.html") &&
+        e.message[0] === "state" &&
+        e.message[1].sessions[0]?.state === "busy",
+    ),
   );
 });

@@ -6,3 +6,5 @@ Windows/node_modules/
 Windows/dist/
 Windows/.smoke-profile/
 .superpowers/
+
+Windows/native/*.exe
