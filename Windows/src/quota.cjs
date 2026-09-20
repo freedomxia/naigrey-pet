@@ -355,6 +355,8 @@ class QuotaService extends EventEmitter {
   #backoffFile;
   #loadedBackoff = false;
   #active = false;
+  #renewalPending = null;
+  #renewalController = null;
   constructor({
     home = os.homedir(),
     env = process.env,
@@ -378,6 +380,7 @@ class QuotaService extends EventEmitter {
       now: this.#now,
       ...claudeAdapters,
       onPID: (pid) => this.emit("cli-pid", pid),
+      onProcess: (event) => this.emit("cli-process", event),
     });
     for (const provider of PROVIDERS)
       this.#states.set(provider, {
@@ -416,6 +419,7 @@ class QuotaService extends EventEmitter {
     this.#renewalEnabled = enabled === true;
     this.#claude.setRenewalEnabled(this.#renewalEnabled);
     if (!this.#renewalEnabled) {
+      this.#cancelRenewal();
       const state = this.#state("claude");
       state.generation++;
       state.controller?.abort();
@@ -443,7 +447,10 @@ class QuotaService extends EventEmitter {
     state.pending = null;
     state.value = this.#empty(provider);
     this.#tracker.forget(provider);
-    if (provider === "claude") this.#claude.forget();
+    if (provider === "claude") {
+      this.#cancelRenewal();
+      this.#claude.forget();
+    }
     this.#change();
   }
   setActive(active) {
@@ -452,6 +459,7 @@ class QuotaService extends EventEmitter {
   start() {
     if (!this.#timer) {
       this.#timer = setInterval(() => {
+        void this.#considerRenewal();
         let aged = false;
         for (const [provider, state] of this.#states) {
           if (
@@ -482,6 +490,7 @@ class QuotaService extends EventEmitter {
   stop() {
     clearInterval(this.#timer);
     this.#timer = null;
+    this.#cancelRenewal();
     this.#claude.forget();
     for (const state of this.#states.values()) {
       state.generation++;
@@ -507,6 +516,45 @@ class QuotaService extends EventEmitter {
       }),
     );
     return this.snapshot();
+  }
+  #cancelRenewal() {
+    this.#renewalController?.abort();
+    this.#renewalController = null;
+    this.#renewalPending = null;
+  }
+  #considerRenewal(fromRead = false) {
+    const state = this.#state("claude");
+    if (
+      !state.connected ||
+      !this.#renewalEnabled ||
+      (state.pending && !fromRead)
+    )
+      return Promise.resolve();
+    if (this.#renewalPending) return this.#renewalPending;
+    const controller = new AbortController(),
+      generation = state.generation;
+    this.#renewalController = controller;
+    const pending = this.#claude.renewal
+      .consider(true, controller.signal)
+      .then((outcome) => {
+        if (
+          outcome &&
+          !controller.signal.aborted &&
+          state.connected &&
+          generation === state.generation &&
+          this.#renewalEnabled
+        )
+          this.emit("renewal", outcome);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (this.#renewalPending === pending) {
+          this.#renewalPending = null;
+          this.#renewalController = null;
+        }
+      });
+    this.#renewalPending = pending;
+    return pending;
   }
   async #saveBackoff(until) {
     const temp = this.#backoffFile + ".tmp";
@@ -536,12 +584,8 @@ class QuotaService extends EventEmitter {
               );
           } catch {}
         }
-        const renewal = await this.#claude.renewal.consider(
-          this.#renewalEnabled,
-          controller.signal,
-        );
+        await this.#considerRenewal(true);
         if (!valid()) return;
-        if (renewal) this.emit("renewal", renewal);
         const local = await this.#claude.local(controller.signal);
         if (!valid()) return;
         if (local) {

@@ -20,7 +20,7 @@ OAuth 429 退避不阻止 Desktop/CLI。Claude 退避为 `min(900, max(60 × 2^m
 
 `/usage` 参数完全沿用 Mac：`--print --no-session-persistence --strict-mcp-config /usage`。固定工作目录 `%LOCALAPPDATA%/Naihui/usage-scratch`（变量缺失则用户主目录/Naihui）；stdin 关闭，stderr 丢弃，stdout 最多 512 KiB，20 秒超时。CLI 输出只接受 `Current session` 和 `Current week (...)` 行，必须有会话窗口；日期支持 IANA 时区、整点/带分钟、跨年最近日期；不认识日期时保留百分比、reset 为 null。
 
-续期对应 `CNClaudeTokenRefresher.swift`：到期不足 4 分钟才尝试；每个到期时间只尝试一次、两次尝试至少隔 10 分钟、单次最长 30 秒。运行 `-p --no-session-persistence --strict-mcp-config`，无输入、无输出保留。退出码不是成功标准，重新读取后到期时间必须推进。该行为没有直接调用刷新端点；由用户安装的 Claude CLI 自行续期并维护自己的凭证，本应用不改写凭证。CLI 的未来版本可能不再于启动时续期，此时返回明确失败并停止重复尝试。
+续期检查有独立的每 60 秒生命周期，空闲额度查询仍为 300 秒，不因续期增加查询频率。断开、停止、撤销授权会中止它，并丢弃迟到结果；已有额度 CLI 工作时不重叠启动。续期对应 `CNClaudeTokenRefresher.swift`：到期不足 4 分钟才尝试；每个到期时间只尝试一次、两次尝试至少隔 10 分钟、单次最长 30 秒。运行 `-p --no-session-persistence --strict-mcp-config`，无输入、无输出保留。退出码不是成功标准，重新读取后到期时间必须推进。该行为没有直接调用刷新端点；由用户安装的 Claude CLI 自行续期并维护自己的凭证，本应用不改写凭证。CLI 的未来版本可能不再于启动时续期，此时返回明确失败并停止重复尝试。
 
 **默认关闭所有 CLI 启动。** `/usage` 也可能在启动时续期，所以和空输入续期共用授权。取消授权、断开、停止时 AbortSignal 终止进程；Windows 使用系统 `taskkill /PID … /T /F` 终止进程树，随后兜底终止直接子进程。取消后的结果不能更新状态。若操作系统拒绝结束进程，应用最多等待额外 2 秒后返回失败；无法承诺强制结束一个拒绝终止的系统进程。
 
@@ -43,7 +43,10 @@ Claude 身份使用组织 UUID，取不到时用配置目录路径，与 `Claude
 ```js
 const service = new QuotaService({ home, env, fetchImpl, now, stateDirectory });
 service.setClaudeRenewalEnabled(savedExplicitConsent === true);
-service.on('cli-pid', pid => { /* number 或 null；会话检测忽略该进程 */ });
+const ignored = new Set();
+service.on('cli-process', ({pid, active}) => {
+  if (active) ignored.add(pid); else ignored.delete(pid);
+}); // 按 PID 配对，旧进程迟到退出不影响新进程。legacy cli-pid 仍兼容。
 service.on('renewal', outcome => { /* refreshed + until，或 failed + message */ });
 service.on('change', snapshots => {});
 service.on('reminder', reminder => {});

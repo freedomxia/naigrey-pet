@@ -327,6 +327,7 @@ async function runCLI(
     signal,
     timeout = 20000,
     onPID = () => {},
+    onProcess = () => {},
     acceptNonzero = false,
     spawnImpl = spawn,
   } = {},
@@ -349,6 +350,8 @@ async function runCLI(
       clearTimeout(killTimer);
       signal?.removeEventListener("abort", cancel);
       onPID(null);
+      if (Number.isInteger(child?.pid))
+        onProcess({ pid: child.pid, active: false });
       err ? reject(new Error("Claude CLI unavailable")) : resolve(value);
     };
     const cancel = () => {
@@ -385,6 +388,8 @@ async function runCLI(
         stdio: ["ignore", acceptNonzero ? "ignore" : "pipe", "ignore"],
       });
       onPID(child.pid);
+      if (Number.isInteger(child.pid))
+        onProcess({ pid: child.pid, active: true });
       child.stdout?.on("data", (chunk) => {
         bytes += chunk.length;
         if (bytes > LIMIT) cancel();
@@ -456,9 +461,11 @@ class ClaudeSources {
     now = Date.now,
     desktop,
     cli,
+    renewal,
+    onProcess = () => {},
     onPID = () => {},
   }) {
-    Object.assign(this, { home, env, now, onPID });
+    Object.assign(this, { home, env, now, onPID, onProcess });
     this.config = env.CLAUDE_CONFIG_DIR || path.join(home, ".claude");
     this.accountFile = env.CLAUDE_CONFIG_DIR
       ? path.join(this.config, ".claude.json")
@@ -479,16 +486,18 @@ class ClaudeSources {
         parseUsageCLI(await this.launch(CLI_ARGS, signal), this.now()));
     this.enabled = false;
     this.forget();
-    this.renewal = new TokenRenewal({
-      now,
-      readExpiry: async () => {
-        const root = await jsonFile(
-          path.join(this.config, ".credentials.json"),
-        );
-        return root?.claudeAiOauth?.expiresAt;
-      },
-      launch: (signal) => this.launch(RENEW_ARGS, signal, true),
-    });
+    this.renewal =
+      renewal ||
+      new TokenRenewal({
+        now,
+        readExpiry: async () => {
+          const root = await jsonFile(
+            path.join(this.config, ".credentials.json"),
+          );
+          return root?.claudeAiOauth?.expiresAt;
+        },
+        launch: (signal) => this.launch(RENEW_ARGS, signal, true),
+      });
   }
   setRenewalEnabled(value) {
     this.enabled = value === true;
@@ -538,6 +547,7 @@ class ClaudeSources {
       signal,
       timeout: renew ? 30000 : 20000,
       onPID: this.onPID,
+      onProcess: this.onProcess,
       acceptNonzero: renew,
     });
   }

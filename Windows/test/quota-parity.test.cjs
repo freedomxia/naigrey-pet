@@ -467,3 +467,120 @@ test("automatic polling is five minutes idle and one minute while busy", async (
   await changed;
   assert.equal(calls, 2);
 });
+test("renewal checks each minute while idle usage remains on five-minute cadence", async (t) => {
+  const home = await fixture(t);
+  let clock = now,
+    expiry = now + 241000,
+    launches = 0,
+    desktopReads = 0;
+  const renewal = new TokenRenewal({
+    now: () => clock,
+    readExpiry: async () => expiry,
+    launch: async () => {
+      launches++;
+      expiry += 28800000;
+    },
+  });
+  const { QuotaService } = require("../src/quota.cjs");
+  const service = new QuotaService({
+    home,
+    env: {},
+    now: () => clock,
+    claudeAdapters: {
+      renewal,
+      desktop: async () => {
+        desktopReads++;
+        return { windows, capturedAt: clock };
+      },
+    },
+  });
+  t.after(() => service.stop());
+  service.setClaudeRenewalEnabled(true);
+  await service.connect("claude");
+  assert.equal(launches, 0);
+  assert.equal(desktopReads, 1);
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  service.start();
+  const done = new Promise((r) => service.once("renewal", r));
+  clock += 60000;
+  t.mock.timers.tick(60000);
+  assert.equal((await done).status, "refreshed");
+  assert.equal(launches, 1);
+  assert.equal(desktopReads, 1);
+});
+test("CLI process events retain newer PID when older subprocess closes late", async (t) => {
+  const home = await fixture(t),
+    { runCLI } = require("../src/quota-claude.cjs"),
+    { EventEmitter } = require("node:events");
+  const children = [],
+    active = new Set();
+  const spawnImpl = () => {
+    const p = new EventEmitter();
+    p.stdout = new EventEmitter();
+    p.pid = 123 + children.length;
+    children.push(p);
+    return p;
+  };
+  const onProcess = ({ pid, active: running }) =>
+    running ? active.add(pid) : active.delete(pid);
+  const opts = { cwd: home, env: {}, spawnImpl, onProcess };
+  const one = runCLI({ file: "fixture", args: [] }, [], opts);
+  while (children.length < 1) await new Promise(setImmediate);
+  const two = runCLI({ file: "fixture", args: [] }, [], opts);
+  while (children.length < 2) await new Promise(setImmediate);
+  assert.deepEqual([...active], [123, 124]);
+  children[0].emit("close", 0);
+  await one;
+  assert.deepEqual([...active], [124]);
+  children[1].emit("close", 0);
+  await two;
+  assert.deepEqual([...active], []);
+});
+for (const mode of ["disconnect", "stop", "revoke"])
+  test(`minute renewal ${mode} aborts and suppresses late outcome`, async (t) => {
+    const home = await fixture(t);
+    let clock = now,
+      expiry = now + 241000,
+      signal,
+      entered,
+      release;
+    const began = new Promise((r) => (entered = r)),
+      hold = new Promise((r) => (release = r));
+    const renewal = new TokenRenewal({
+      now: () => clock,
+      readExpiry: async () => expiry,
+      launch: async (s) => {
+        signal = s;
+        entered();
+        await hold;
+        expiry = clock + 28800000;
+      },
+    });
+    const { QuotaService } = require("../src/quota.cjs");
+    const service = new QuotaService({
+      home,
+      env: {},
+      now: () => clock,
+      claudeAdapters: {
+        renewal,
+        desktop: async () => ({ windows, capturedAt: clock }),
+      },
+    });
+    t.after(() => service.stop());
+    const outcomes = [];
+    service.on("renewal", (o) => outcomes.push(o));
+    service.setClaudeRenewalEnabled(true);
+    await service.connect("claude");
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    service.start();
+    clock += 60000;
+    t.mock.timers.tick(60000);
+    await began;
+    if (mode === "disconnect") service.disconnect("claude");
+    else if (mode === "stop") service.stop();
+    else service.setClaudeRenewalEnabled(false);
+    assert.equal(signal.aborted, true);
+    release();
+    await new Promise(setImmediate);
+    assert.deepEqual(outcomes, []);
+  });
