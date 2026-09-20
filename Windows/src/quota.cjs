@@ -6,6 +6,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const { createHash } = require("node:crypto");
+const { ClaudeSources } = require("./quota-claude.cjs");
 const PROVIDERS = ["codex", "claude"];
 const ENDPOINTS = Object.freeze({
   codex: "https://chatgpt.com/backend-api/wham/usage",
@@ -154,18 +155,47 @@ function parseClaude(value) {
 }
 class ReminderTracker {
   #states = new Map();
+  #weekly = new Map();
   forget(provider) {
     this.#states.delete(provider);
+    this.#weekly.delete(provider);
   }
   observe(snapshot, fingerprint) {
     if (snapshot.status !== "ok") return [];
     const headline = snapshot.windows.find(
       (w) => w.id === "primary" || w.id === "session",
     );
-    if (!headline) return [];
     const weekly = snapshot.windows.find(
       (w) => w.id === "secondary" || w.id === "weekly_all",
     );
+    const weeklyEvents = [];
+    if (weekly) {
+      const previous = this.#weekly.get(snapshot.provider);
+      const old = previous?.fingerprint === fingerprint ? previous : null;
+      const exhausted = weekly.usedPercent >= 100;
+      let latched = old?.exhausted || false;
+      if (
+        weekly.usedPercent < 95 ||
+        (weekly.resetsAt &&
+          old?.reset &&
+          Date.parse(weekly.resetsAt) > Date.parse(old.reset))
+      )
+        latched = false;
+      if (old && exhausted && !latched)
+        weeklyEvents.push({
+          provider: snapshot.provider,
+          title:
+            (snapshot.provider === "codex" ? "Codex" : "Claude") + " 额度提醒",
+          body: weekly.label + "额度已用完。",
+          kind: "weekly-limit",
+        });
+      this.#weekly.set(snapshot.provider, {
+        fingerprint,
+        exhausted: latched || exhausted,
+        reset: weekly.resetsAt,
+      });
+    }
+    if (!headline) return weeklyEvents;
     const p = headline.usedPercent,
       level = p >= 100 ? 100 : p >= 80 ? 80 : 0;
     const old = this.#states.get(snapshot.provider),
@@ -174,13 +204,12 @@ class ReminderTracker {
       !old || changed
         ? {
             fingerprint,
-            level: changed ? level : 0,
+            level: 0,
             p,
             peak: p,
             reset: headline.resetsAt,
             lastReset: headline.resetsAt,
-            weeklyExhausted: weekly?.usedPercent >= 100,
-            weeklyReset: weekly?.resetsAt,
+            sessionExhausted: p >= 100,
           }
         : old;
     const events = [],
@@ -212,18 +241,16 @@ class ReminderTracker {
         state.peak = p;
         state.lastReset = headline.resetsAt;
       }
-      if (weekly) {
-        if (
-          (weekly.resetsAt &&
-            state.weeklyReset &&
-            Date.parse(weekly.resetsAt) > Date.parse(state.weeklyReset)) ||
-          weekly.usedPercent < 95
-        )
-          state.weeklyExhausted = false;
-        if (weekly.usedPercent >= 100 && !state.weeklyExhausted) {
-          emit("weekly-limit", `${weekly.label}额度已用完。`);
-          state.weeklyExhausted = true;
-        }
+      if (
+        (headline.resetsAt &&
+          state.reset &&
+          Date.parse(headline.resetsAt) > Date.parse(state.reset)) ||
+        p < 95
+      )
+        state.sessionExhausted = false;
+      if (p >= 100 && !state.sessionExhausted) {
+        emit("session-limit", headline.label + "额度已用完。");
+        state.sessionExhausted = true;
       }
     }
     Object.assign(state, {
@@ -231,10 +258,9 @@ class ReminderTracker {
       p,
       peak: Math.max(state.peak, p),
       reset: headline.resetsAt,
-      weeklyReset: weekly?.resetsAt,
     });
     this.#states.set(snapshot.provider, state);
-    return events;
+    return [...events, ...weeklyEvents];
   }
 }
 async function boundedFile(filename) {
@@ -323,23 +349,41 @@ class QuotaService extends EventEmitter {
   #states = new Map();
   #tracker = new ReminderTracker();
   #timer;
+  #claude;
+  #renewalEnabled = false;
+  #rateLimits = 0;
+  #backoffFile;
+  #loadedBackoff = false;
+  #active = false;
   constructor({
     home = os.homedir(),
     env = process.env,
     fetchImpl = globalThis.fetch,
     now = Date.now,
+    claudeAdapters = {},
+    stateDirectory,
   } = {}) {
     super();
     this.#home = home;
-    this.#env = {
-      CODEX_HOME: env.CODEX_HOME,
-      CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR,
-    };
+    this.#env = { ...env };
+    this.#backoffFile = path.join(
+      stateDirectory || path.join(env.LOCALAPPDATA || home, "Naihui"),
+      "quota-backoff.json",
+    );
     this.#fetch = fetchImpl;
     this.#now = () => Number(now());
+    this.#claude = new ClaudeSources({
+      home,
+      env: this.#env,
+      now: this.#now,
+      ...claudeAdapters,
+      onPID: (pid) => this.emit("cli-pid", pid),
+    });
     for (const provider of PROVIDERS)
       this.#states.set(provider, {
         connected: false,
+        lastAttempt: null,
+        fingerprint: null,
         generation: 0,
         retryAt: 0,
         pending: null,
@@ -368,6 +412,16 @@ class QuotaService extends EventEmitter {
   #change() {
     this.emit("change", this.snapshot());
   }
+  setClaudeRenewalEnabled(enabled) {
+    this.#renewalEnabled = enabled === true;
+    this.#claude.setRenewalEnabled(this.#renewalEnabled);
+    if (!this.#renewalEnabled) {
+      const state = this.#state("claude");
+      state.generation++;
+      state.controller?.abort();
+      state.pending = null;
+    }
+  }
   async connect(provider) {
     const state = this.#state(provider);
     state.connected = true;
@@ -389,12 +443,37 @@ class QuotaService extends EventEmitter {
     state.pending = null;
     state.value = this.#empty(provider);
     this.#tracker.forget(provider);
+    if (provider === "claude") this.#claude.forget();
     this.#change();
+  }
+  setActive(active) {
+    this.#active = active === true;
   }
   start() {
     if (!this.#timer) {
       this.#timer = setInterval(() => {
-        void this.refresh();
+        let aged = false;
+        for (const [provider, state] of this.#states) {
+          if (
+            state.value.status === "ok" &&
+            this.#now() -
+              Date.parse(state.value.sourceAt || state.value.observedAt) >
+              900000
+          ) {
+            state.value.status = "stale";
+            aged = true;
+          }
+          const resetDue = state.value.windows.some(
+            (w) => w.resetsAt && Date.parse(w.resetsAt) <= this.#now(),
+          );
+          const interval = this.#active || resetDue ? 60000 : 300000;
+          if (
+            state.lastAttempt === null ||
+            this.#now() - state.lastAttempt >= interval
+          )
+            void this.refresh(provider);
+        }
+        if (aged) this.#change();
       }, 60000);
       this.#timer.unref?.();
     }
@@ -403,6 +482,7 @@ class QuotaService extends EventEmitter {
   stop() {
     clearInterval(this.#timer);
     this.#timer = null;
+    this.#claude.forget();
     for (const state of this.#states.values()) {
       state.generation++;
       state.controller?.abort();
@@ -414,8 +494,10 @@ class QuotaService extends EventEmitter {
     await Promise.all(
       providers.map((p) => {
         const state = this.#state(p);
-        if (!state.connected || state.retryAt > this.#now()) return;
+        if (!state.connected || (p !== "claude" && state.retryAt > this.#now()))
+          return;
         if (state.pending) return state.pending;
+        state.lastAttempt = this.#now();
         const generation = state.generation;
         const pending = this.#read(p, state, generation).finally(() => {
           if (state.pending === pending) state.pending = null;
@@ -426,10 +508,65 @@ class QuotaService extends EventEmitter {
     );
     return this.snapshot();
   }
+  async #saveBackoff(until) {
+    const temp = this.#backoffFile + ".tmp";
+    try {
+      await fs.mkdir(path.dirname(this.#backoffFile), { recursive: true });
+      await fs.writeFile(temp, JSON.stringify({ until }), { mode: 0o600 });
+      await fs.rename(temp, this.#backoffFile);
+    } catch {
+      await fs.rm(temp, { force: true }).catch(() => {});
+    }
+  }
   async #read(provider, state, generation) {
     const valid = () => state.connected && generation === state.generation;
-    let timer;
+    let timer, currentFingerprint;
+    const controller = new AbortController();
+    state.controller = controller;
     try {
+      if (provider === "claude") {
+        if (!this.#loadedBackoff) {
+          this.#loadedBackoff = true;
+          try {
+            const saved = await boundedFile(this.#backoffFile);
+            if (number(saved.until))
+              state.retryAt = Math.max(
+                state.retryAt,
+                Math.min(saved.until, this.#now() + 900000),
+              );
+          } catch {}
+        }
+        const renewal = await this.#claude.renewal.consider(
+          this.#renewalEnabled,
+          controller.signal,
+        );
+        if (!valid()) return;
+        if (renewal) this.emit("renewal", renewal);
+        const local = await this.#claude.local(controller.signal);
+        if (!valid()) return;
+        if (local) {
+          state.fingerprint = local.fingerprint;
+          state.value = {
+            provider,
+            status: "ok",
+            source: local.source,
+            windows: local.windows,
+            message: null,
+            sourceAt: new Date(local.capturedAt).toISOString(),
+            observedAt: new Date(this.#now()).toISOString(),
+          };
+          const reminders = this.#tracker.observe(
+            state.value,
+            local.fingerprint,
+          );
+          this.#change();
+          if (this.#now() - local.capturedAt <= 900000)
+            for (const reminder of reminders) this.emit("reminder", reminder);
+          return;
+        }
+        if (state.retryAt > this.#now())
+          throw new QuotaError("error", "Claude 额度接口限流，稍后重试。");
+      }
       const filename =
         provider === "codex"
           ? path.join(
@@ -440,7 +577,7 @@ class QuotaService extends EventEmitter {
               this.#env.CLAUDE_CONFIG_DIR || path.join(this.#home, ".claude"),
               ".credentials.json",
             );
-      const credential = credentials(
+      let credential = credentials(
         provider,
         await boundedFile(filename),
         this.#now(),
@@ -454,8 +591,10 @@ class QuotaService extends EventEmitter {
       if (provider === "codex")
         headers["ChatGPT-Account-Id"] = credential.account;
       else headers["anthropic-beta"] = "oauth-2025-04-20";
-      const controller = new AbortController();
-      state.controller = controller;
+      if (provider === "claude")
+        credential.fingerprint = await this.#claude.identity();
+      currentFingerprint = credential.fingerprint;
+      if (!valid()) return;
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => {
           controller.abort();
@@ -464,14 +603,34 @@ class QuotaService extends EventEmitter {
         timer.unref?.();
       });
       const request = (async () => {
-        const response = await this.#fetch(ENDPOINTS[provider], {
-          method: "GET",
-          headers,
-          redirect: "error",
-          signal: controller.signal,
-          cache: "no-store",
-          credentials: "omit",
-        });
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          response = await this.#fetch(ENDPOINTS[provider], {
+            method: "GET",
+            headers,
+            redirect: "error",
+            signal: controller.signal,
+            cache: "no-store",
+            credentials: "omit",
+          });
+          if (
+            provider !== "claude" ||
+            ![401, 403].includes(response.status) ||
+            attempt > 0
+          )
+            break;
+          await response.body?.cancel().catch(() => {});
+          credential = credentials(
+            provider,
+            await boundedFile(filename),
+            this.#now(),
+          );
+          credential.fingerprint = await this.#claude.identity();
+          currentFingerprint = credential.fingerprint;
+          if (controller.signal.aborted || !valid())
+            throw new Error("cancelled");
+          headers.Authorization = "Bearer " + credential.token;
+        }
         if (response.status < 200 || response.status >= 300)
           await response.body?.cancel().catch(() => {});
         if ([401, 403].includes(response.status))
@@ -504,15 +663,19 @@ class QuotaService extends EventEmitter {
       const windows = await Promise.race([request, timeout]);
       if (!valid()) return;
       state.retryAt = 0;
+      if (provider === "claude") {
+        this.#rateLimits = 0;
+        await this.#saveBackoff(0);
+      }
+      if (!valid()) return;
+      state.fingerprint = credential.fingerprint;
       state.value = {
         provider,
         status: "ok",
         source: SOURCES[provider],
         windows,
-        message:
-          provider === "claude"
-            ? "OAuth 只读模式；凭证轮换后重建提醒基线。"
-            : null,
+        message: null,
+        sourceAt: new Date(this.#now()).toISOString(),
         observedAt: new Date(this.#now()).toISOString(),
       };
       const reminders = this.#tracker.observe(
@@ -527,16 +690,47 @@ class QuotaService extends EventEmitter {
         error instanceof QuotaError
           ? error
           : new QuotaError("error", "额度请求未完成，请检查网络后重试。");
-      if (known.retryAfter)
-        state.retryAt = this.#now() + known.retryAfter * 1000;
-      state.value = {
-        provider,
-        status: known.status,
-        source: SOURCES[provider],
-        windows: [],
-        message: known.message,
-        observedAt: null,
-      };
+      if (known.retryAfter) {
+        const delay =
+          provider === "claude"
+            ? Math.min(
+                900,
+                Math.max(
+                  60 * 2 ** Math.min(this.#rateLimits++, 4),
+                  known.retryAfter,
+                ),
+              )
+            : known.retryAfter;
+        state.retryAt = this.#now() + delay * 1000;
+        if (provider === "claude") await this.#saveBackoff(state.retryAt);
+      }
+      if (!valid()) return;
+      const previous = state.value;
+      const preserve =
+        ["error", "accessDenied"].includes(known.status) &&
+        currentFingerprint &&
+        currentFingerprint === state.fingerprint &&
+        previous.windows.length;
+      state.value = preserve
+        ? {
+            ...previous,
+            status:
+              this.#now() -
+                Date.parse(previous.sourceAt || previous.observedAt) >
+              900000
+                ? "stale"
+                : "ok",
+            message: known.message,
+            observedAt: new Date(this.#now()).toISOString(),
+          }
+        : {
+            provider,
+            status: known.status,
+            source: SOURCES[provider],
+            windows: [],
+            message: known.message,
+            observedAt: null,
+          };
       this.#change();
     } finally {
       clearTimeout(timer);

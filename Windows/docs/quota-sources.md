@@ -1,61 +1,66 @@
-# Windows 额度来源与边界
+# Windows 额度来源与验证边界
 
-此模块是 Node CommonJS，无第三方依赖。协议取自当前仓库的 `Source/AICompanion/Providers.swift`、`CNCodexUsage.swift`、`CNUsageResponse.swift`；提醒规则参考 Codenotch v1.14.0 的 `CNThresholdNotifier.swift`、`CNUsageResetWatcher.swift` 和 `CNUsageLimitWatcher.swift`（MIT，版权与许可见根目录 `THIRD_PARTY_NOTICES.md`）。下面描述的是本模块已经实现的行为，不表示已用真实 Windows 账号验收。
+协议与规则以本仓库 `Source/AICompanion` 为基准，Codenotch v1.14.0（MIT）版权见 `THIRD_PARTY_NOTICES.md`。下面区分代码和合成样本已验证的行为、真实 Windows 尚待验证的行为。
 
-## 登录来源
+## 来源选择
 
-| 提供方 | 文件 | 支持的字段 | 固定 HTTPS 请求 |
-| --- | --- | --- | --- |
-| Codex | `$CODEX_HOME/auth.json`，未设时为用户主目录 `.codex/auth.json` | `tokens.access_token`、`tokens.account_id`；JWT `exp` 过期检查 | `https://chatgpt.com/backend-api/wham/usage` |
-| Claude Code | `$CLAUDE_CONFIG_DIR/.credentials.json`，未设时为用户主目录 `.claude/.credentials.json` | `claudeAiOauth.accessToken`、`claudeAiOauth.expiresAt`（毫秒） | `https://api.anthropic.com/api/oauth/usage` |
+Codex 从 `$CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）读取 `tokens.access_token/account_id`，拒绝 API Key 模式和过期 JWT。固定 GET `https://chatgpt.com/backend-api/wham/usage`，发送 `ChatGPT-Account-Id`。
 
-Codex 请求包含 `ChatGPT-Account-Id`；Claude 请求包含 `anthropic-beta: oauth-2025-04-20`。两者仅以 Bearer 方式发送访问令牌，不使用 refresh token，不修改凭证。登录续期由原客户端负责。Codex API Key 计费模式不支持订阅额度。仅存于系统凭据管理器、没有上述文件的登录方式目前不可用。
+Claude 按以下顺序选择，与 `ClaudeQuotaSources.swift` 对应：
 
-Windows 首版没有移植 macOS Claude Desktop 缓存：现有实现依赖 macOS 应用缓存布局和组织选择信息，Windows 存储路径、编码和账号对应关系未验证。也没有自动启动 Claude CLI `/usage`：现有桥接依赖 macOS CLI/终端过程，Windows 交互式认证、PTY 输出及取消行为未验证。因此 Claude 仅支持上述 OAuth 文件来源。OAuth 失败或限流时显示真实错误，不用模拟数据冒充备用来源。
+1. Claude Desktop 缓存：`%APPDATA%/Claude/Cache/Cache_Data`。组织必须匹配 `.claude.json` 的 `oauthAccount.organizationUuid`。默认账号文件在主目录；设置 `CLAUDE_CONFIG_DIR` 时在该目录内，符合 CLI 对该变量的语义。缓存成功每次重新扫描，失败等待 5 分钟；读取不足 30 分钟且无窗口已过重置时间的数据。
+2. Claude CLI `/usage`：仅用户开启「允许 Claude CLI / 续期」后运行。成功缓存 5 分钟，窗口重置后不再复用；失败也间隔 5 分钟。组织变化清空缓存和尝试时间。
+3. OAuth 文件：`$CLAUDE_CONFIG_DIR/.credentials.json`（默认 `~/.claude/.credentials.json`），读取 `claudeAiOauth.accessToken/expiresAt`。固定 GET `https://api.anthropic.com/api/oauth/usage`，发送 `anthropic-beta: oauth-2025-04-20`。
 
-## 解析与提醒
+OAuth 429 退避不阻止 Desktop/CLI。Claude 退避为 `min(900, max(60 × 2^min(连续限流次数,4), Retry-After))` 秒，成功清零；到期时间保存到应用状态目录 `quota-backoff.json`，重启仍生效。连续次数只在内存中，与 Mac 相同。Codex 保留 Retry-After 秒数/HTTP 日期处理和最低 60 秒等待。
 
-Codex 解析 `rate_limit.primary_window/secondary_window`，Spark `additional_rate_limits` 和 `code_review_rate_limit`。百分比必须是 0–100 的有限数字；异常单个窗口不会丢掉有效兄弟窗口。`reset_at` 是秒时间戳，备用 `reset_after_seconds` 是相对秒数。缺失或无效重置时间为 null。
+## Windows CLI 和续期
 
-Claude 优先读取 `limits[{kind,percent,resets_at,scope.model.display_name}]`，合并 `five_hour` 为 `session`、`seven_day` 为 `weekly_all`。同一 id 去重，当前会话排在最前。Claude 窗口要求有效 ISO 8601 重置时间；日期缺失或无效时跳过。此行为与 CNUsageResponse.swift 的 limitWindows() 一致：limits 项和命名窗口都要求非空 resetsAt；现代项缺失重置时间时，仍可由同 id 的有效命名窗口补入。没有可用窗口时返回 unsupported，绝不把缺失值当 0。
+自动发现原生 `.local/bin/claude.exe`、`.claude/local/claude.exe`、`.bun/bin/claude.exe` 和 PATH 绝对目录中的 `claude.exe`。npm 全局安装识别 `node_modules/@anthropic-ai/claude-code/cli.js` 并使用找到的 `node.exe` 启动，不解析或执行 `.cmd/.bat` shim、不启动 shell。查找目录最多 100 个。
 
-主窗口从低于 80% 跨到 80%、100% 时发对应提醒；初次连接已在阈值上方也会发阈值提醒。重复采样不重复提醒，降到下一档后可以再次跨越。每周 100% 提醒从第二次有效采样开始；跌到 95% 以下或重置时间向后推进才解除去重。
+`/usage` 参数完全沿用 Mac：`--print --no-session-persistence --strict-mcp-config /usage`。固定工作目录 `%LOCALAPPDATA%/Naihui/usage-scratch`（变量缺失则用户主目录/Naihui）；stdin 关闭，stderr 丢弃，stdout 最多 512 KiB，20 秒超时。CLI 输出只接受 `Current session` 和 `Current week (...)` 行，必须有会话窗口；日期支持 IANA 时区、整点/带分钟、跨年最近日期；不认识日期时保留百分比、reset 为 null。
 
-重置提醒要求历史峰值至少 15%，并满足重置日期向后推进，或用量下降至少 20 个百分点，或峰值至少 30% 后降至 10% 以下。重置时间和峰值记录避免同一变化重复提醒。提醒只看主会话和全模型周窗口，Spark/代码审查/模型专属窗口仅供显示。
+续期对应 `CNClaudeTokenRefresher.swift`：到期不足 4 分钟才尝试；每个到期时间只尝试一次、两次尝试至少隔 10 分钟、单次最长 30 秒。运行 `-p --no-session-persistence --strict-mcp-config`，无输入、无输出保留。退出码不是成功标准，重新读取后到期时间必须推进。该行为没有直接调用刷新端点；由用户安装的 Claude CLI 自行续期并维护自己的凭证，本应用不改写凭证。CLI 的未来版本可能不再于启动时续期，此时返回明确失败并停止重复尝试。
 
-Codex 使用账号 ID 的 SHA-256，Claude 使用访问令牌的 SHA-256 作为进程私有身份标记。账号变化、Claude 令牌轮换重新建立提醒基线，不把账号切换视为额度恢复，也不重播已有阈值。断开连接清除提醒基线。哈希、原始账号 ID、令牌均不进入 snapshot、change 或 reminder。
+**默认关闭所有 CLI 启动。** `/usage` 也可能在启动时续期，所以和空输入续期共用授权。取消授权、断开、停止时 AbortSignal 终止进程；Windows 使用系统 `taskkill /PID … /T /F` 终止进程树，随后兜底终止直接子进程。取消后的结果不能更新状态。若操作系统拒绝结束进程，应用最多等待额外 2 秒后返回失败；无法承诺强制结束一个拒绝终止的系统进程。
 
-## 服务 API
+## 缓存格式与隐私
+
+支持 Mac 使用的 Chromium Simple Cache 格式：24 字节文件头、固定 magic、最多 8 KiB key、zstd body、尾部 HTTP Date。URL 检查使用精确 HTTPS host（claude.ai / anthropic.com / api.anthropic.com）和 `/api/organizations/<org>/usage`；允许 query，不接受额外路径、端口、用户信息。只有匹配组织的条目才读取完整 body，读取后再次校验组织。非匹配文件只读取 header 和 key。
+
+目录最多枚举 20,000 项，按修改时间排序检查最近 400 个候选；条目上限 512 KiB，解压上限 256 KiB。zstd frame 长度独立解析，避免把尾部当压缩数据；使用 Node 内置 zstd，运行时无此能力时回退下一来源。读取 Date header，缺失时使用同一文件描述符的修改时间。允许小幅服务器时钟偏差。JSON 格式改变、文件正在改写、超限、其他压缩编码都回退，无错误原文或缓存正文进入日志/快照。
+
+## 解析、身份与提醒
+
+Codex 的主窗口、周窗口、Spark 和代码审查窗口保留原有解析；单个无效窗口不丢掉兄弟窗口。Claude 的现代 `limits` 优先，合并 `five_hour/seven_day`；OAuth/缓存窗口要求合法 ISO reset，CLI 则允许 null。缺失值不冒充 0。百分比仅接受 0–100 有限数字。
+
+Claude 身份使用组织 UUID，取不到时用配置目录路径，与 `ClaudeQuotaSources.swift` 相同；SHA-256 仅进程内部使用。切换来源或令牌轮换不重置提醒基线；切换组织清除旧源缓存，重新建立提醒基线；和 Mac 一样可触发新账号当前阈值，但不会将账号切换当作额度恢复。配置目录 fallback 和 Mac 一样无法辨别没有组织信息的同目录账号切换，这是明确的证据边界。原始账号、token、hash 均不进入 snapshot/change/reminder。
+
+主窗口 80%/100% 阈值、每周 100% 和 95% 迟滞、重置峰值至少 15%、下降至少 20 个百分点或峰值 30% 后降至 10% 规则继续沿用。代码审查和 Spark 仅显示。现有 Windows 提醒事件用 `threshold-80/threshold-100` 表示已用比例；Mac EventRules 的事件名用剩余比例 `threshold-20/threshold-0`，UI 集成应按 Windows 接口解读。会话耗尽另发 `session-limit`，和每周一样使用 95% 迟滞；首个样本不会发 limit 事件。即使主窗口暂时缺失，每周仍可独立触发。超过 15 分钟的缓存读数不产生提醒。
+
+## 集成 API
 
 ```js
-const { QuotaService, parseCodex, parseClaude, ReminderTracker } = require('./src/quota.cjs');
-const service = new QuotaService({ home, env, fetchImpl, now }); // 所有参数可省略
+const service = new QuotaService({ home, env, fetchImpl, now, stateDirectory });
+service.setClaudeRenewalEnabled(savedExplicitConsent === true);
+service.on('cli-pid', pid => { /* number 或 null；会话检测忽略该进程 */ });
+service.on('renewal', outcome => { /* refreshed + until，或 failed + message */ });
 service.on('change', snapshots => {});
-service.on('reminder', ({ provider, title, body, kind }) => {});
-service.start();                  // 幂等；每 60 秒仅刷新已连接提供方
-await service.connect('codex');    // 明确连接后才读取凭证并请求
-await service.refresh();          // 或 refresh('claude')；仍尊重 Retry-After
-const snapshots = service.snapshot();
-service.disconnect('codex');      // 取消在途请求，清空该方数据
-service.stop();                   // 停止周期刷新并使在途结果失效
+service.on('reminder', reminder => {});
+service.setActive(sessions.some(s => s.state === "busy"));
+service.start();
+await service.connect('claude');
+await service.refresh('claude');
+service.disconnect('claude');
+service.stop();
 ```
 
-`connect`、`refresh` 返回 Promise，解析为快照数组；`disconnect`、`stop` 同步；`start` 返回服务实例。`now` 为返回毫秒时间戳的函数，也可返回 Date。快照固定按 Codex、Claude 排序：
+构造函数不读凭证、不启动进程。必须 connect 后才读取；自动刷新空闲每 300 秒、有忙碌会话或重置到期时每 60 秒；相同来源并发合并。主进程负责保存提供方选择、续期授权和通知策略。`stateDirectory` 推荐 Electron `userData`，不包含凭证，仅保存限流到期。`claudeAdapters: {desktop,cli}` 仅用于测试注入。
 
-```js
-{ provider, status, source,
-  windows: [{ id, label, usedPercent, resetsAt }],
-  message, observedAt }
-```
+快照格式沿用 `{provider,status,source,windows,message,observedAt}`；缓存额外提供真实 `sourceAt`。同账号的暂时错误保留原读数，超过 15 分钟标记 `stale`；认证失败、格式不支持或账号已变化时清空窗口。CLI/缓存同样不产生跨账号旧结果。Claude 401/403 会重新读取凭证，最多再请求一次。网络响应上限 2 MB，凭证文件 1 MB，请求 15 秒超时，拒绝重定向，不携带 cookie，不缓存响应，错误不含响应正文或异常原文。
 
-`status` 为 `disconnected | ok | needsAuth | accessDenied | unsupported | error`；时间均为 ISO 字符串或 null。任何失败清空 windows，避免旧账号或过期读数继续显示；成功时 message 可为 null。snapshot 和 change 均返回副本。reminder 的 kind 为 `threshold-80 | threshold-100 | weekly-limit | reset`。
+## 验证与未覆盖项
 
-解析器分别为 `parseCodex(objectOrJSON, nowMilliseconds?)`、`parseClaude(objectOrJSON)`，返回窗口数组，无有效数据会抛错。`ReminderTracker.observe(snapshot, privateFingerprint)` 返回提醒数组；`forget(provider)` 清理该提供方。
+`node --test Windows/test/quota*.test.cjs` 全部使用临时目录、合成 Simple Cache/zstd 文件、假 HTTP 响应和假进程，没有读取开发机账号或调用真实额度接口。
 
-## 请求约束与验证范围
-
-首次启动默认不连接。用户明确连接后，主进程仅保存提供方名称，后续启动按此选择重新连接；断开连接会删除对应选择。QuotaService 自身不读写设置，由主进程调用 connect 恢复已授权的选择。设置不保存访问令牌、刷新令牌、账号 ID 或凭证指纹。凭证在请求时读取，文件上限 1 MB；HTTP 响应流上限 2 MB；整个网络请求和响应读取超时 15 秒。请求拒绝所有重定向，不接受可配置端点，禁止 cookie 携带和缓存。错误文案不包含服务端响应或异常原文。相同提供方并发刷新合并。断开/停止后到达的结果失效。
-
-429 的 Retry-After 支持秒数和 HTTP 日期，最低等待 60 秒，手动刷新和断开重连也不能跳过；限流状态仅存在进程内。自动轮询 60 秒，不启动任何外部 CLI 或凭证刷新。没有主动探测第三方登录状态。
-
-单元测试覆盖解析、合并、非法数值/日期、阈值去重、周限额迟滞、重置、账号切换、明确连接、过期登录、自定义目录、固定端点及重定向选项、限流和到期、断开后的迟到结果、API Key 拒绝、响应大小、鉴权失败清空和敏感内容不外传。测试采用临时文件与假 HTTP 响应，不读取开发机账号、不调用真实额度接口。真实 Windows 文件登录与服务器响应尚需验收。
+真实 Windows 用户机器尚待验收：原生/npm CLI 启动及进程树取消、Desktop 实际缓存条目、CLI 续期结果。这里实现的是普通 Electron 用户数据目录；MSIX/商店沙箱的目录重定向没有仓库样本，不扫描猜测的 Packages 路径。Chromium 其他磁盘缓存后端/编码和仅系统凭据管理器登录没有已知字段协议，明确回退 OAuth/显示需要登录，不声称已支持。Mac Security.framework 钥匙串授权没有机械映射为 Windows Credential Manager。

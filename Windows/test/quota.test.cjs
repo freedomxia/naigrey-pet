@@ -103,17 +103,20 @@ test("thresholds, weekly hysteresis, reset and account switch baselines", () => 
   assert.deepEqual(tracker.observe(snapshot(80, 100), "a"), []);
   assert.deepEqual(
     tracker.observe(snapshot(100, 99), "a").map((x) => x.kind),
-    ["threshold-100"],
+    ["threshold-100", "session-limit"],
   );
   assert.deepEqual(tracker.observe(snapshot(100, 100), "a"), []);
   assert.deepEqual(
     tracker.observe(snapshot(5, 20, now + 36000000), "a").map((x) => x.kind),
     ["reset"],
   );
-  assert.deepEqual(tracker.observe(snapshot(90, 20), "b"), []);
+  assert.deepEqual(
+    tracker.observe(snapshot(90, 20), "b").map((x) => x.kind),
+    ["threshold-80"],
+  );
   assert.deepEqual(
     tracker.observe(snapshot(100, 20), "b").map((x) => x.kind),
-    ["threshold-100"],
+    ["threshold-100", "session-limit"],
   );
 });
 test("no reads/network before explicit connection; snapshots contain no credential data", async (t) => {
@@ -268,7 +271,7 @@ test("Claude opaque token rotation rebaselines while Codex account changes canno
   assert.deepEqual(tracker.observe(snapshot(0), "account-b"), []);
   assert.deepEqual(
     tracker.observe(snapshot(100), "account-b").map((x) => x.kind),
-    ["threshold-80", "threshold-100"],
+    ["threshold-80", "threshold-100", "session-limit"],
   );
 });
 test("timeout bounds a fetch implementation that never resolves", async (t) => {
