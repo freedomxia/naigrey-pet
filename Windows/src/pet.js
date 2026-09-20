@@ -344,7 +344,7 @@ async function boot() {
   const startPixels = canvas.toDataURL();
   await new Promise((resolve) => setTimeout(resolve, 1500));
   if (renderedFrames - startFrames < 10 || canvas.toDataURL() === startPixels)
-    throw new Error("桌宠待机画布未持续更新");
+    throw new Error(`桌宠待机画布未持续更新: frames=${renderedFrames-startFrames}, pixelsChanged=${canvas.toDataURL()!==startPixels}, visibility=${document.visibilityState}`);
   const probes = [];
   for (const c of metadata.clips) {
     const v = getVideo(c.name);

@@ -276,7 +276,7 @@ app.whenReady().then(() => {
     }
   });
   pet.once("ready-to-show", () => {
-    if (!smoke) pet.showInactive();
+    pet.showInactive();
   });
   pet.on("move", () => {
     if (panel.isVisible()) repositionPanel();
