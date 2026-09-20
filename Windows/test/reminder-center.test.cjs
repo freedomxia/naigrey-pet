@@ -289,3 +289,4 @@ test("serialization removes private identity and cloned quota events fail closed
   assert.equal(center.drain({ usage: u, canPresent: true }), null);
   assert.equal(JSON.stringify(e).includes("identity"), false);
 });
+test('clearPending drops pre-suspend presentation but retains history and unread',()=>{const epoch={},u=usage(100,epoch),center=new ReminderCenter({now:()=>now});center.accept([event('before-sleep',epoch)],u,[],{});center.clearPending();assert.equal(center.drain({usage:u,canPresent:true}),null);assert.equal(center.snapshot().history.length,1);assert.equal(center.snapshot().unreadCount,1)});

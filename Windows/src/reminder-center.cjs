@@ -231,6 +231,9 @@ class ReminderCenter {
       unreadIDs: [...this.#unread],
     };
   }
+  clearPending() {
+    this.#queue = [];
+  }
   markRead() {
     this.#unread.clear();
     return this.snapshot();
