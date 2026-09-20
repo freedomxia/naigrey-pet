@@ -420,9 +420,12 @@ class QuotaService extends EventEmitter {
       );
     });
   }
-  #rememberIdentity(state, fingerprint) {
-    if (state.fingerprint !== fingerprint) state.reminderIdentity = {};
-    state.fingerprint = fingerprint;
+  #rememberIdentity(state, fingerprint, successful = true) {
+    if (state.identityFingerprint !== fingerprint) {
+      state.reminderIdentity = {};
+      state.identityFingerprint = fingerprint;
+    }
+    if (successful) state.fingerprint = fingerprint;
   }
   #remind(reminder, state) {
     this.emit(
@@ -656,6 +659,7 @@ class QuotaService extends EventEmitter {
       if (provider === "claude")
         credential.fingerprint = await this.#claude.identity();
       currentFingerprint = credential.fingerprint;
+      this.#rememberIdentity(state, currentFingerprint, false);
       if (!valid()) return;
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => {
@@ -689,6 +693,7 @@ class QuotaService extends EventEmitter {
           );
           credential.fingerprint = await this.#claude.identity();
           currentFingerprint = credential.fingerprint;
+          this.#rememberIdentity(state, currentFingerprint, false);
           if (controller.signal.aborted || !valid())
             throw new Error("cancelled");
           headers.Authorization = "Bearer " + credential.token;

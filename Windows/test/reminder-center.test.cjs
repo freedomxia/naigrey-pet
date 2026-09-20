@@ -289,4 +289,55 @@ test("serialization removes private identity and cloned quota events fail closed
   assert.equal(center.drain({ usage: u, canPresent: true }), null);
   assert.equal(JSON.stringify(e).includes("identity"), false);
 });
-test('clearPending drops pre-suspend presentation but retains history and unread',()=>{const epoch={},u=usage(100,epoch),center=new ReminderCenter({now:()=>now});center.accept([event('before-sleep',epoch)],u,[],{});center.clearPending();assert.equal(center.drain({usage:u,canPresent:true}),null);assert.equal(center.snapshot().history.length,1);assert.equal(center.snapshot().unreadCount,1)});
+test("clearPending drops pre-suspend presentation but retains history and unread", () => {
+  const epoch = {},
+    u = usage(100, epoch),
+    center = new ReminderCenter({ now: () => now });
+  center.accept([event("before-sleep", epoch)], u, [], {});
+  center.clearPending();
+  assert.equal(center.drain({ usage: u, canPresent: true }), null);
+  assert.equal(center.snapshot().history.length, 1);
+  assert.equal(center.snapshot().unreadCount, 1);
+});
+test("known account switch clears private reminder history even when new usage request fails", async (t) => {
+  const fs = require("node:fs/promises"),
+    os = require("node:os"),
+    path = require("node:path"),
+    { QuotaService } = require("../src/quota.cjs");
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "reminder-switch-"));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.mkdir(path.join(home, ".codex"));
+  const auth = path.join(home, ".codex", "auth.json"),
+    write = (account) =>
+      fs.writeFile(
+        auth,
+        JSON.stringify({
+          tokens: { account_id: account, access_token: "fixture" },
+        }),
+      );
+  await write("a");
+  let fail = false;
+  const service = new QuotaService({
+    home,
+    env: {},
+    now: () => now,
+    fetchImpl: async () => {
+      if (fail) throw Error("network");
+      return new Response(
+        JSON.stringify({
+          rate_limit: { primary_window: { used_percent: 90 } },
+        }),
+      );
+    },
+  });
+  t.after(() => service.stop());
+  const center = new ReminderCenter({ now: () => now });
+  service.on("reminder", (e) => center.accept([e], service.snapshot(), [], {}));
+  await service.connect("codex");
+  assert.equal(center.snapshot().history.length, 1);
+  await write("b");
+  fail = true;
+  await service.refresh();
+  center.drain({ usage: service.snapshot(), canPresent: true });
+  assert.equal(center.snapshot().history.length, 0);
+});
