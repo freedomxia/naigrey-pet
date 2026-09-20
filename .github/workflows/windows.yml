@@ -1,0 +1,65 @@
+name: Windows preview
+on:
+  push:
+    branches: [feature/windows-desktop]
+    paths:
+      ["Windows/**", ".github/workflows/windows.yml", "THIRD_PARTY_NOTICES.md"]
+  pull_request:
+    paths:
+      ["Windows/**", ".github/workflows/windows.yml", "THIRD_PARTY_NOTICES.md"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Build and test native Windows sensing
+        shell: pwsh
+        run: |
+          ./scripts/build-native.ps1
+          ./scripts/test-native.ps1
+      - run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Packaged decoder smoke test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath './dist/win-unpacked/奶灰桌宠.exe' -ArgumentList '--smoke-test','--demo' -PassThru -RedirectStandardOutput smoke.log -RedirectStandardError smoke-error.log
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Smoke test timed out' }
+          Get-Content smoke.log
+          Get-Content smoke-error.log
+          if ($process.ExitCode -ne 0) { throw "Smoke test exit $($process.ExitCode)" }
+          if (-not (Select-String -Path smoke.log -Pattern '"ok":true')) { throw 'Smoke result missing' }
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File | Where-Object { $_.Extension -in '.exe','.zip' } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naigrey-windows-x64-preview
+          path: |
+            Windows/dist/*.exe
+            Windows/dist/*.zip
+            Windows/dist/SHA256SUMS.txt
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-diagnostics
+          path: Windows/*log

@@ -2,3 +2,9 @@
 dist/
 *.zip
 .DS_Store
+Windows/node_modules/
+Windows/dist/
+Windows/.smoke-profile/
+.superpowers/
+
+Windows/native/*.exe

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'"
+    />
+    <link rel="stylesheet" href="panel.css" />
+    <title>AI 额度</title>
+  </head>
+  <body>
+    <header>
+      <strong>AI 额度</strong>
+      <div>
+        <button id="refresh" title="刷新">↻</button
+        ><button id="settings" title="设置">⚙</button
+        ><button id="close" title="收起">×</button>
+      </div>
+    </header>
+    <main id="providers"></main>
+    <div id="sessions"></div>
+    <footer id="status">连接本机账号后查看额度</footer>
+    <script src="reset-copy.cjs"></script>
+    <script src="panel.js"></script>
+  </body>
+</html>

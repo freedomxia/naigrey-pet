@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'"
+    />
+    <title>奶灰</title>
+    <link rel="stylesheet" href="pet.css" />
+  </head>
+  <body>
+    <canvas
+      id="cat"
+      width="1040"
+      height="640"
+      aria-label="奶灰小猫，拖动搬家，双击睡觉"
+      role="img"
+    ></canvas
+    ><button id="ai" title="查看 Codex / Claude 额度">AI</button>
+    <div id="bubble" role="status"></div>
+    <script src="pet-model.cjs"></script>
+    <script src="pet-motion.cjs"></script>
+    <script src="pet-renderer.js"></script>
+    <script src="pet.js"></script>
+  </body>
+</html>

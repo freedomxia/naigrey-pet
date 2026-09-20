@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'"
+    />
+    <link rel="stylesheet" href="settings.css" />
+    <title>奶灰设置</title>
+  </head>
+  <body>
+    <h1>按你的节奏来</h1>
+    <p id="notice">额度卡片收起后，仍会刷新已连接的账号。</p>
+    <div class="toolbar">
+      <button id="refresh">刷新额度</button
+      ><button id="mute">暂停提醒 1 小时</button
+      ><button id="unmute">恢复提醒 1 小时</button>
+    </div>
+    <label
+      >猫咪大小<select id="size">
+        <option>72</option>
+        <option>100</option>
+        <option>130</option>
+        <option>140</option>
+        <option>170</option>
+      </select></label
+    >
+    <div id="options"></div>
+    <p class="note">
+      开启 Claude CLI 续期后，奶灰可启动本机 Claude Code；Claude
+      自身可能更新登录凭证。奶灰不会读取或保存按键内容、录制声音。
+    </p>
+    <label>每日免打扰<input id="quiet" type="checkbox" /></label>
+    <div class="quiet-row">
+      <input type="time" id="quietStart" aria-label="免打扰开始" /> 至
+      <input type="time" id="quietEnd" aria-label="免打扰结束" />
+    </div>
+    <div id="details"></div>
+    <button id="update">检查 Windows 更新</button>
+    <p class="note">
+      仅在连接后读取对应账号与任务状态。Claude 支持本机 Desktop 缓存、授权 CLI
+      及 OAuth 文件。不会自动使用重置券。
+    </p>
+    <script src="reset-copy.cjs"></script>
+    <script src="settings.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+canvas {
+  display: block;
+  touch-action: none;
+}
