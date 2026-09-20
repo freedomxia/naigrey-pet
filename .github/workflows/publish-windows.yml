@@ -1,0 +1,60 @@
+name: Publish Windows installer
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Windows build run ID
+        required: true
+        type: string
+      version:
+        description: Windows version (for example 0.2.0)
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN_ID: ${{ inputs.run_id }}
+      VERSION: ${{ inputs.version }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify build provenance
+        shell: pwsh
+        run: |
+          if ($env:BUILD_RUN_ID -notmatch '^\d+$' -or $env:VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release parameters' }
+          $run = gh api "repos/$env:GH_REPO/actions/runs/$env:BUILD_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/windows.yml') { throw 'A successful Windows build is required' }
+          git merge-base --is-ancestor $run.head_sha HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Build commit is not merged into main' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: naigrey-windows-x64-preview
+          path: release-input
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify installer and attach to release draft
+        shell: pwsh
+        run: |
+          $name = "naigrey-windows-$env:VERSION-x64-setup.exe"
+          $file = Join-Path 'release-input' $name
+          if (-not (Test-Path $file)) { throw 'Installer missing' }
+          $lines = @(Get-Content release-input/SHA256SUMS.txt | Where-Object { $_ -match ('^[a-fA-F0-9]{64}\s+' + [regex]::Escape($name) + '$') })
+          if ($lines.Count -ne 1) { throw 'Installer checksum missing or ambiguous' }
+          $expected = ($lines[0] -split '\s+')[0].ToLower()
+          if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Installer checksum mismatch' }
+          "$expected  $name" | Set-Content -Encoding utf8 release-input/SHA256SUMS.txt
+          $tag = "windows-v$env:VERSION"
+          $release = gh release view $tag --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.isDraft) { throw 'Create an unpublished release draft first' }
+          gh release upload $tag $file 'release-input/SHA256SUMS.txt'
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+          Write-Output "VERIFIED_INSTALLER $name $expected"
