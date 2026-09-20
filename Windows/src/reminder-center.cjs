@@ -1,7 +1,9 @@
 "use strict";
 // CompanionService.accept/drain and AIReminderPolicy, adapted from the Mac source.
-// Account epochs are capability objects in a WeakMap: never fields in renderer data.
+// Account epochs live in a WeakMap: never fields in renderer data.
 const { randomUUID } = require("node:crypto");
+const path = require("node:path");
+const { readStore, writeStore, validIdentity } = require("./quota-store.cjs");
 const identities = new WeakMap();
 function bindReminderIdentity(value, identity) {
   if (value && typeof value === "object" && identity)
@@ -152,8 +154,48 @@ class ReminderCenter {
   #epochs = new Map();
   #lastPresented = -Infinity;
   #now;
-  constructor({ now = Date.now } = {}) {
+  #file;
+  #restored = [];
+  #lastSaved = "";
+  constructor({ now = Date.now, stateDirectory } = {}) {
     this.#now = () => Number(now());
+    this.#file = stateDirectory
+      ? path.join(stateDirectory, "reminder-history.json")
+      : null;
+    const saved = readStore(this.#file);
+    if (saved?.version === 1 && Array.isArray(saved.records)) {
+      this.#restored = saved.records.slice(-100).flatMap((record) => {
+        const event = normalize(record?.event, this.#now());
+        return event &&
+          validIdentity(record?.identity) &&
+          Math.abs(this.#now() - stamp(event.createdAt)) < 86400000
+          ? [{ event, identity: record.identity }]
+          : [];
+      });
+    }
+  }
+  #persist() {
+    if (!this.#file) return;
+    const records = [
+      ...this.#restored,
+      ...this.#history.map((event) => ({
+        event,
+        identity: identities.get(event),
+      })),
+    ]
+      .filter(
+        (record) =>
+          validIdentity(record.identity) &&
+          Math.abs(this.#now() - stamp(record.event.createdAt)) < 86400000,
+      )
+      .sort((a, b) => stamp(a.event.createdAt) - stamp(b.event.createdAt))
+      .slice(-100);
+    const value = { version: 1, records },
+      signature = JSON.stringify(value);
+    if (signature !== this.#lastSaved) {
+      writeStore(this.#file, value);
+      this.#lastSaved = signature;
+    }
   }
   #prune() {
     const now = this.#now();
@@ -169,13 +211,28 @@ class ReminderCenter {
       if (!["claude", "codex"].includes(provider)) continue;
       const epoch = identities.get(reading);
       if (reading.status === "disconnected") {
-        this.clearProvider(provider);
+        // A startup snapshot may precede the explicit connection of this provider.
+        // Its pending disk history stays hidden until identity validation.
+        if (this.#epochs.has(provider)) this.clearProvider(provider);
         continue;
       }
       if (!epoch) continue;
       const old = this.#epochs.get(provider);
       if (old && old !== epoch) this.clearProvider(provider);
       this.#epochs.set(provider, epoch);
+      if (validIdentity(epoch)) {
+        for (const record of this.#restored.filter(
+          (r) => r.event.provider === provider && r.identity === epoch,
+        )) {
+          if (!this.#history.some((e) => e.id === record.event.id))
+            this.#history.push(bindReminderIdentity(record.event, epoch));
+        }
+        this.#restored = this.#restored.filter(
+          (r) => r.event.provider !== provider,
+        );
+        this.#prune();
+        this.#persist();
+      }
     }
   }
   accept(events, usage = [], sessions = [], prefs = {}) {
@@ -185,6 +242,8 @@ class ReminderCenter {
     for (const input of (Array.isArray(events) ? events : []).slice(0, 1000)) {
       const e = normalize(input, now);
       if (!e || this.#history.some((h) => h.id === e.id)) continue;
+      if (e.sessionID && !identities.get(e))
+        bindReminderIdentity(e, this.#epochs.get(e.provider));
       this.#history.push(e);
       this.#unread.add(e.id);
       if (!muted(prefs, now) && allowed(e, prefs)) this.#queue.push(e);
@@ -195,6 +254,7 @@ class ReminderCenter {
         a.priority - b.priority || stamp(a.createdAt) - stamp(b.createdAt),
     );
     this.#queue = this.#queue.slice(0, 10);
+    this.#persist();
     return this.snapshot();
   }
   drain({ usage = [], sessions = [], prefs = {}, canPresent = false } = {}) {
@@ -239,10 +299,14 @@ class ReminderCenter {
     return this.snapshot();
   }
   clearProvider(provider) {
+    this.#restored = this.#restored.filter(
+      (r) => r.event.provider !== provider,
+    );
     this.#history = this.#history.filter((e) => e.provider !== provider);
     this.#queue = this.#queue.filter((e) => e.provider !== provider);
     this.#epochs.delete(provider);
     this.#prune();
+    this.#persist();
   }
 }
 module.exports = { ReminderCenter, bindReminderIdentity };

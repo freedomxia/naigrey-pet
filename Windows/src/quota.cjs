@@ -8,6 +8,12 @@ const os = require("node:os");
 const { createHash } = require("node:crypto");
 const { ClaudeSources } = require("./quota-claude.cjs");
 const { bindReminderIdentity } = require("./reminder-center.cjs");
+const {
+  readStore,
+  writeStore,
+  cachedUsage,
+  validIdentity,
+} = require("./quota-store.cjs");
 const PROVIDERS = ["codex", "claude"];
 const ENDPOINTS = Object.freeze({
   codex: "https://chatgpt.com/backend-api/wham/usage",
@@ -354,6 +360,8 @@ class QuotaService extends EventEmitter {
   #renewalEnabled = false;
   #rateLimits = 0;
   #backoffFile;
+  #cacheFile;
+  #cacheRecords = null;
   #loadedBackoff = false;
   #active = false;
   #renewalPending = null;
@@ -372,6 +380,10 @@ class QuotaService extends EventEmitter {
     this.#backoffFile = path.join(
       stateDirectory || path.join(env.LOCALAPPDATA || home, "Naihui"),
       "quota-backoff.json",
+    );
+    this.#cacheFile = path.join(
+      path.dirname(this.#backoffFile),
+      "quota-cache.json",
     );
     this.#fetch = fetchImpl;
     this.#now = () => Number(now());
@@ -422,10 +434,50 @@ class QuotaService extends EventEmitter {
   }
   #rememberIdentity(state, fingerprint, successful = true) {
     if (state.identityFingerprint !== fingerprint) {
-      state.reminderIdentity = {};
+      state.reminderIdentity = fingerprint;
       state.identityFingerprint = fingerprint;
     }
     if (successful) state.fingerprint = fingerprint;
+    this.#restoreCache(state, fingerprint);
+  }
+  #loadCache() {
+    if (!this.#cacheRecords) {
+      const saved = readStore(this.#cacheFile);
+      this.#cacheRecords = {};
+      if (saved?.version === 1)
+        for (const provider of PROVIDERS) {
+          const record = saved.records?.[provider];
+          const value = cachedUsage(record?.value, provider, this.#now());
+          if (value && validIdentity(record.identity))
+            this.#cacheRecords[provider] = { identity: record.identity, value };
+        }
+    }
+  }
+  #restoreCache(state, fingerprint) {
+    if (state.restoredIdentity === fingerprint) return;
+    state.restoredIdentity = fingerprint;
+    this.#loadCache();
+    const provider = state.value.provider,
+      saved = this.#cacheRecords[provider];
+    const value =
+      saved?.identity === fingerprint
+        ? cachedUsage(saved.value, provider, this.#now())
+        : null;
+    if (value && !state.value.windows.length) {
+      state.value = value;
+      state.fingerprint = fingerprint;
+      this.#change();
+    }
+  }
+  #persistCache(provider, state) {
+    this.#loadCache();
+    if (state?.value.windows.length && state.fingerprint)
+      this.#cacheRecords[provider] = {
+        identity: state.fingerprint,
+        value: state.value,
+      };
+    else delete this.#cacheRecords[provider];
+    writeStore(this.#cacheFile, { version: 1, records: this.#cacheRecords });
   }
   #remind(reminder, state) {
     this.emit(
@@ -467,6 +519,8 @@ class QuotaService extends EventEmitter {
     state.controller?.abort();
     state.pending = null;
     state.value = this.#empty(provider);
+    state.restoredIdentity = null;
+    this.#persistCache(provider, null);
     this.#tracker.forget(provider);
     if (provider === "claude") {
       this.#cancelRenewal();
@@ -623,6 +677,7 @@ class QuotaService extends EventEmitter {
             sourceAt: new Date(local.capturedAt).toISOString(),
             observedAt: new Date(this.#now()).toISOString(),
           };
+          this.#persistCache(provider, state);
           const reminders = this.#tracker.observe(
             state.value,
             local.fingerprint,
@@ -662,8 +717,8 @@ class QuotaService extends EventEmitter {
       if (provider === "claude")
         credential.fingerprint = await this.#claude.identity();
       currentFingerprint = credential.fingerprint;
-      this.#rememberIdentity(state, currentFingerprint, false);
       if (!valid()) return;
+      this.#rememberIdentity(state, currentFingerprint, false);
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => {
           controller.abort();
@@ -696,9 +751,9 @@ class QuotaService extends EventEmitter {
           );
           credential.fingerprint = await this.#claude.identity();
           currentFingerprint = credential.fingerprint;
-          this.#rememberIdentity(state, currentFingerprint, false);
           if (controller.signal.aborted || !valid())
             throw new Error("cancelled");
+          this.#rememberIdentity(state, currentFingerprint, false);
           headers.Authorization = "Bearer " + credential.token;
         }
         if (response.status < 200 || response.status >= 300)
@@ -748,6 +803,7 @@ class QuotaService extends EventEmitter {
         sourceAt: new Date(this.#now()).toISOString(),
         observedAt: new Date(this.#now()).toISOString(),
       };
+      this.#persistCache(provider, state);
       const reminders = this.#tracker.observe(
         state.value,
         credential.fingerprint,
@@ -785,9 +841,10 @@ class QuotaService extends EventEmitter {
         ? {
             ...previous,
             status:
+              previous.status === "stale" ||
               this.#now() -
                 Date.parse(previous.sourceAt || previous.observedAt) >
-              900000
+                900000
                 ? "stale"
                 : "ok",
             message: known.message,
@@ -801,6 +858,7 @@ class QuotaService extends EventEmitter {
             message: known.message,
             observedAt: null,
           };
+      this.#persistCache(provider, state);
       this.#change();
     } finally {
       clearTimeout(timer);

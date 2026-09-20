@@ -67,3 +67,9 @@ service.stop();
 `node --test Windows/test/quota*.test.cjs` 全部使用临时目录、合成 Simple Cache/zstd 文件、假 HTTP 响应和假进程，没有读取开发机账号或调用真实额度接口。
 
 真实 Windows 用户机器尚待验收：原生/npm CLI 启动及进程树取消、Desktop 实际缓存条目、CLI 续期结果。这里实现的是普通 Electron 用户数据目录；MSIX/商店沙箱的目录重定向没有仓库样本，不扫描猜测的 Packages 路径。Chromium 其他磁盘缓存后端/编码和仅系统凭据管理器登录没有已知字段协议，明确回退 OAuth/显示需要登录，不声称已支持。Mac Security.framework 钥匙串授权没有机械映射为 Windows Credential Manager。
+
+## Restart persistence
+
+With `stateDirectory`, quota readings and reminder history use bounded, atomic JSON stores. They contain sanitized usage/events and SHA-256 account identity digests, never credentials. New files request mode `0600` (Windows protection inherits the user data directory ACL). Restored readings remain hidden until the current local account matches, expire after 24 hours, and remain visibly stale until a successful live read. History restoration similarly validates the provider identity, retains at most 100 events for 24 hours, and restores neither pending presentations nor unread markers. Explicit disconnect clears that provider's store. `ReminderCenter` must receive the same `stateDirectory`; snapshots sent to renderers contain no identity digest.
+
+`reset-copy.cjs` is shared by Node and browser scripts (`window.ResetCopy.text`). It follows `CNResetCopy.swift`: nearest-minute rounding, absolute dates after 60 rounded minutes, calendar-day comparison for the seven-day boundary, locale clocks, and days/hours or hours/minutes for remaining-time mode.
