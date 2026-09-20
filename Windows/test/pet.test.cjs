@@ -120,3 +120,66 @@ test("an autonomous nap wakes up but a manually chosen sleep stays asleep", () =
   idle.interact(52000);
   assert.equal(idle.tick({ now: 90000, pose: "sleep", busy: true }), null);
 });
+test("clip travel respects the exact stand-up and sit-down movement windows", () => {
+  const { clipMoving } = require("../src/pet-model.cjs");
+  const { clips } = require("../assets/clips/clips.json");
+  for (const c of clips.filter((c) => c.moveFrom > 0)) {
+    assert.equal(clipMoving(c, c.moveFrom - 0.001), false, c.name);
+    assert.equal(clipMoving(c, c.moveFrom + 0.001), true, c.name);
+  }
+  for (const c of clips.filter((c) => c.moveTo != null))
+    assert.equal(clipMoving(c, c.moveTo + 0.001), false, c.name);
+});
+test("Mac autonomous roll meows, becomes drowsy at night, and stays still during typing", () => {
+  const { IdleCompanion } = require("../src/pet-model.cjs");
+  const m = new IdleCompanion(() => 0.12);
+  m.greeted = true;
+  assert.equal(m.tick({ now: 5000, pose: "idle", hour: 12 }), "meow");
+  assert.equal(m.tick({ now: 20000, pose: "idle", hour: 23 }), "yawn");
+  assert.equal(m.tick({ now: 40000, pose: "idle", typing: true }), null);
+});
+test("company repeats without four-loop cutoff and exits cleanly on changed state", () => {
+  const { repeatClip } = require("../src/pet-model.cjs");
+  assert.equal(
+    repeatClip({
+      name: "type",
+      completed: 100,
+      loops: 4,
+      continuous: true,
+      company: "type",
+    }),
+    true,
+  );
+  assert.equal(
+    repeatClip({
+      name: "type",
+      completed: 1,
+      loops: 4,
+      continuous: true,
+      company: "music",
+    }),
+    false,
+  );
+  assert.equal(
+    repeatClip({
+      name: "type",
+      completed: 1,
+      loops: 4,
+      continuous: true,
+      company: "type",
+      pending: "sleep",
+    }),
+    false,
+  );
+});
+test("play hands the yarn ball to the native window at the last video position and signed velocity", () => {
+  const { clipBallHandOff } = require("../src/pet-model.cjs");
+  const { clips, sitHeight } = require("../assets/clips/clips.json");
+  const clip = clips.find((c) => c.name === "play");
+  const a = clipBallHandOff(clip, sitHeight, 140, 210, 247, false),
+    b = clipBallHandOff(clip, sitHeight, 140, 210, 247, true);
+  assert.ok(a);
+  assert.equal(a.point.x + b.point.x, 420);
+  assert.equal(a.velocity.x, -b.velocity.x);
+  assert.equal(a.point.y, b.point.y);
+});

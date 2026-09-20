@@ -58,6 +58,47 @@
       height: clip.size[1] * s,
     };
   }
+  function repeatClip({
+    name,
+    completed,
+    loops,
+    pending,
+    continuous,
+    company,
+  }) {
+    if (pending) return false;
+    return continuous ? company === name : completed < loops;
+  }
+  function clipBallHandOff(
+    clip,
+    sitHeight,
+    catHeight,
+    cx,
+    ground,
+    mirrored = false,
+  ) {
+    if (!clip.ballEnd || !clip.ballVelocity) return null;
+    const rect = clipRect(clip, 1, sitHeight, catHeight, cx, ground),
+      scale = catHeight / sitHeight;
+    const x = rect.x + clip.ballEnd[0] * scale;
+    return {
+      point: {
+        x: mirrored ? cx * 2 - x : x,
+        y: rect.y + clip.ballEnd[1] * scale,
+      },
+      velocity: {
+        x: (mirrored ? -1 : 1) * clip.ballVelocity[0] * scale,
+        y: clip.ballVelocity[1] * scale,
+      },
+    };
+  }
+  function clipMoving(clip, seconds) {
+    return (
+      clip.speed > 0 &&
+      seconds >= (clip.moveFrom || 0) &&
+      (clip.moveTo == null || seconds <= clip.moveTo)
+    );
+  }
   function walkDistance(elapsed, speed, scale) {
     return (Math.max(0, Math.min(50, elapsed)) * speed * scale) / 1000;
   }
@@ -81,24 +122,34 @@
       this.nextAt = now + 6000;
       this.wakeAt = null;
     }
-    tick({ now, pose, busy = false, dragging = false, enabled = true }) {
+    tick({
+      now,
+      pose,
+      busy = false,
+      dragging = false,
+      enabled = true,
+      typing = false,
+      roaming = true,
+      hour = 12,
+    }) {
       if (!enabled || dragging) return null;
       if (pose === "sleep" && this.wakeAt !== null && now >= this.wakeAt) {
         this.wakeAt = null;
         this.nextAt = now + 8000;
         return "idle";
       }
-      if (busy || pose !== "idle" || now < this.nextAt) return null;
+      if (busy || typing || pose !== "idle" || now < this.nextAt) return null;
       this.nextAt = now + 8000 + this.random() * 8000;
       if (!this.greeted) {
         this.greeted = true;
         return "wave";
       }
       const roll = this.random();
-      if (roll < 0.07) return "yawn";
-      if (roll < 0.2) return "wave";
+      const drowsy = (hour >= 14 && hour <= 15) || hour >= 22 || hour < 6;
+      if (roll < (drowsy ? 0.16 : 0.07)) return "yawn";
+      if (roll < 0.2) return "meow";
       if (roll < 0.25) return "stretch";
-      if (roll < 0.37) return "walk";
+      if (roll < 0.37 && roaming) return "walk";
       if (roll < 0.4) {
         this.wakeAt = now + 15000 + this.random() * 15000;
         return "sleep";
@@ -115,6 +166,9 @@
     panelPosition,
     clipRect,
     walkDistance,
+    clipMoving,
+    repeatClip,
+    clipBallHandOff,
   };
   if (typeof module !== "undefined") module.exports = api;
   else root.PetModel = api;

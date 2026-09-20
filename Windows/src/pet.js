@@ -10,7 +10,6 @@ let renderedFrames = 0,
 const clips = new Map(),
   videos = new Map();
 let lastDraw = 0,
-  atlas,
   metadata,
   pose = "idle",
   active = null,
@@ -18,15 +17,13 @@ let lastDraw = 0,
   pending = null,
   fade = null,
   fadeAt = 0,
-  blinkAt = performance.now() + 4500,
   pointer = null,
   clickTimer,
   bubbleTimer,
   ready = false;
 let prefs = { motion: true },
   lastHit = true;
-const CAT_HEIGHT = 140,
-  GROUND = 247;
+const GROUND = 247;
 function bubble(text) {
   const el = document.querySelector("#bubble");
   el.textContent = text;
@@ -34,34 +31,79 @@ function bubble(text) {
   clearTimeout(bubbleTimer);
   bubbleTimer = setTimeout(() => el.classList.remove("visible"), 4500);
 }
-function trim(source, x, y, w, h) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const g = c.getContext("2d", { willReadFrequently: true });
-  g.drawImage(source, x, y, w, h, 0, 0, w, h);
-  const d = g.getImageData(0, 0, w, h).data;
-  let l = w,
-    t = h,
-    r = 0,
-    b = 0;
-  for (let j = 0; j < h; j++)
-    for (let i = 0; i < w; i++)
-      if (d[(j * w + i) * 4 + 3] > 24) {
-        l = Math.min(l, i);
-        r = Math.max(r, i);
-        t = Math.min(t, j);
-        b = Math.max(b, j);
-      }
-  const out = document.createElement("canvas");
-  out.width = r - l + 1;
-  out.height = b - t + 1;
-  out
-    .getContext("2d")
-    .drawImage(c, l, t, out.width, out.height, 0, 0, out.width, out.height);
-  return out;
+let motion,
+  renderer,
+  rigData,
+  externalSenses = {},
+  facingRight = false;
+let flipFrom = 1,
+  flipTo = 1,
+  flipAt = -1000,
+  localPointer = null,
+  lastPointerSample = null,
+  pointerSpeed = 0,
+  releaseAt = -1000,
+  liftAt = -1000;
+let company = null,
+  typeRate = 1;
+let cancelPlayback = null,
+  actionGeneration = 0;
+function catHeight() {
+  return [72, 100, 130, 140, 170].includes(prefs.catHeight)
+    ? prefs.catHeight
+    : 140;
 }
-let idleSprite, blinkSprite;
+function currentFlip(now) {
+  return (
+    flipFrom + (flipTo - flipFrom) * window.PetMotion.ease((now - flipAt) / 180)
+  );
+}
+function acceptState(s) {
+  prefs = s.prefs || prefs;
+  if (Object.hasOwn(s, "company")) {
+    const previous = company;
+    company =
+      s.company === "typing"
+        ? "type"
+        : ["type", "music"].includes(s.company)
+          ? s.company
+          : null;
+    if (
+      previous !== company &&
+      busy &&
+      /^(type|music)/.test(active?.name || "")
+    )
+      pending = company || "idle";
+    if (company && !busy && ready && !pointer) requestAction(company, true);
+  }
+  if (Number.isFinite(s.typeRate))
+    typeRate = Math.max(0.25, Math.min(3, s.typeRate));
+  if (active?.name === "type") active.video.playbackRate = typeRate;
+  externalSenses = s.senses || externalSenses;
+  const right = s.facingRight ?? s.direction > 0;
+  if (right !== facingRight) {
+    flipFrom = currentFlip(performance.now());
+    flipTo = right ? -1 : 1;
+    flipAt = performance.now();
+    facingRight = right;
+  }
+  document.querySelector("#ai").textContent = s.sessions?.some(
+    (x) => x.state === "busy",
+  )
+    ? "AI⋯"
+    : "AI";
+}
+function cancelAction() {
+  actionGeneration++;
+  pending = null;
+  if (cancelPlayback) cancelPlayback();
+  active?.video.pause();
+  active = null;
+  pose = "idle";
+  busy = false;
+  api.command("phase", "idle");
+}
+
 function freeze() {
   const c = document.createElement("canvas");
   c.width = 840;
@@ -100,20 +142,46 @@ function getVideo(name) {
   return v;
 }
 async function playClip(name, loops = 1) {
+  const generation = actionGeneration;
   const video = getVideo(name);
   await videoReady(video);
+  if (generation !== actionGeneration) return;
   video.currentTime = 0;
   freeze();
   active = { name, video, clip: clips.get(name) };
+  const continuous = company === name && ["type", "music"].includes(name);
+  video.playbackRate = name === "type" ? typeRate : 1;
   api.command("phase", name);
   let n = 0;
   await new Promise((resolve, reject) => {
     const onEnd = () => {
       n++;
-      if (n < loops && !pending) {
+      if (
+        window.PetModel.repeatClip({
+          name,
+          completed: n,
+          loops,
+          pending,
+          continuous,
+          company,
+        })
+      ) {
         video.currentTime = 0;
         video.play().catch(fail);
-      } else done();
+      } else {
+        if (name === "play") {
+          const hand = window.PetModel.clipBallHandOff(
+            clips.get(name),
+            metadata.sitHeight,
+            catHeight(),
+            210,
+            GROUND,
+            !facingRight,
+          );
+          if (hand) api.command("ball-hand-off", hand);
+        }
+        done();
+      }
     };
     function cleanup() {
       video.removeEventListener("ended", onEnd);
@@ -121,12 +189,17 @@ async function playClip(name, loops = 1) {
     }
     function done() {
       cleanup();
+      cancelPlayback = null;
       resolve();
     }
     function fail() {
       cleanup();
       reject(new Error("播放失败"));
     }
+    cancelPlayback = () => {
+      video.pause();
+      done();
+    };
     video.addEventListener("ended", onEnd);
     video.addEventListener("error", fail, { once: true });
     video.play().catch(fail);
@@ -135,6 +208,19 @@ async function playClip(name, loops = 1) {
 async function requestAction(action, autonomous = false) {
   if (!autonomous) companion.interact(performance.now());
   if (!ready) return;
+  if (action === "meow") {
+    if (prefs.motion) motion.meow();
+    return;
+  }
+  if (action === "blink") {
+    if (prefs.motion) motion.blink();
+    return;
+  }
+  if (action === "stop") {
+    cancelAction();
+    return;
+  }
+
   if (action === "sleep" && pose === "sleep") return;
   if (busy) {
     pending = action;
@@ -143,9 +229,12 @@ async function requestAction(action, autonomous = false) {
   const path = actionPath(pose, action);
   if (!path.length) return;
   busy = true;
+  const generation = ++actionGeneration;
+  const companyAction = company === action;
   pending = null;
   try {
     for (let i = 0; i < path.length; i++) {
+      if (generation !== actionGeneration) return;
       const name = path[i],
         next = path[i + 1];
       if (next && next !== "idle") videoReady(getVideo(next)).catch(() => {});
@@ -160,18 +249,27 @@ async function requestAction(action, autonomous = false) {
         pose = "sleep";
         do {
           await playClip(name);
+          if (generation !== actionGeneration) return;
           pending = sleepContinuation(pending);
         } while (!pending);
         break;
       }
+      if (
+        ["type", "music"].includes(name) &&
+        companyAction &&
+        company !== name
+      )
+        continue;
       await playClip(name, ["type", "music", "walk"].includes(name) ? 4 : 1);
     }
     if (action !== "sleep") pose = "idle";
   } catch {
     active = null;
     pose = "idle";
+    api.command("phase", "idle");
     bubble("这个动作暂时无法播放，请检查素材是否完整。");
   } finally {
+    if (generation !== actionGeneration) return;
     busy = false;
     const next = pending;
     pending = null;
@@ -188,24 +286,113 @@ function draw(now) {
       c,
       active.video.currentTime / c.duration,
       metadata.sitHeight,
-      CAT_HEIGHT,
+      catHeight(),
       210,
       GROUND,
     );
+    const flip = ["walk", "standUp", "sitDown"].includes(active.name)
+      ? currentFlip(now)
+      : active.name === "play" && !facingRight
+        ? -1
+        : 1;
+    ctx.save();
+    ctx.translate(210, 0);
+    ctx.scale(flip, 1);
+    ctx.translate(-210, 0);
     ctx.drawImage(active.video, rect.x, rect.y, rect.width, rect.height);
-  } else if (idleSprite) {
-    const breath = prefs.motion ? 1 + Math.sin(now / 1100) * 0.007 : 1;
-    const h = CAT_HEIGHT * breath,
-      w = (idleSprite.width / idleSprite.height) * CAT_HEIGHT;
-    ctx.drawImage(idleSprite, 210 - w / 2, GROUND - h, w, h);
-    if (now > blinkAt && now < blinkAt + 240) {
-      const opacity = Math.sin(((now - blinkAt) / 240) * Math.PI);
-      ctx.globalAlpha = opacity;
-      const bw = (blinkSprite.width / blinkSprite.height) * h;
-      ctx.drawImage(blinkSprite, 210 - bw / 2 + 1, GROUND - h, bw, h);
-      ctx.globalAlpha = 1;
-    } else if (now >= blinkAt + 240)
-      blinkAt = now + 3500 + Math.random() * 3000;
+    ctx.restore();
+  } else if (renderer) {
+    const h = catHeight(),
+      scale = h / rigData.sizes.idle[1],
+      r = rigData.rigs.idle;
+    const pt = externalSenses.pointer || localPointer;
+    let sensed = null;
+    if (pt) {
+      sensed = {
+        x: (pt.x - (210 - (r.width * scale) / 2)) / scale,
+        y: (pt.y - (GROUND - (r.height - 40) * scale)) / scale,
+      };
+      if (lastPointerSample) {
+        const instant =
+          Math.hypot(
+            sensed.x - lastPointerSample.x,
+            sensed.y - lastPointerSample.y,
+          ) / Math.max(0.001, (now - lastPointerSample.at) / 1000);
+        pointerSpeed += (instant - pointerSpeed) * 0.35;
+      }
+      lastPointerSample = { ...sensed, at: now };
+    }
+    if (prefs.motion !== false)
+      motion.update(
+        Math.max(0.001, Math.min(0.05, (now - (lastDraw || now - 16)) / 1000)),
+        "idle",
+        false,
+        {
+          pointer: sensed,
+          pointerSpeed,
+          pointerOverHead:
+            sensed &&
+            sensed.x > 135 &&
+            sensed.x < 520 &&
+            sensed.y > 10 &&
+            sensed.y < 300,
+          held: !!pointer?.moved,
+          fixated: !!externalSenses.fixated,
+        },
+      );
+    ctx.save();
+    // Mac carried pose and soft landing, applied around the paw line.
+    if (pointer?.moved) {
+      const u = (now - liftAt) / 1000;
+      ctx.translate(210, GROUND - h * 0.06 * window.PetMotion.ease(u / 0.18));
+      ctx.rotate(
+        -window.PetMotion.keys(u % 1.1, [
+          [0, 0],
+          [0.275, 0.06],
+          [0.55, 0],
+          [0.825, -0.06],
+          [1.1, 0],
+        ]),
+      );
+      ctx.scale(
+        1 - 0.03 * window.PetMotion.ease(u / 0.2),
+        1 + 0.04 * window.PetMotion.ease(u / 0.2),
+      );
+      ctx.translate(-210, -GROUND);
+    } else if (now - releaseAt < 500) {
+      const t = (now - releaseAt) / 1000,
+        K = window.PetMotion.keys,
+        bounce = K(t, [
+          [0, 0.06],
+          [0.2, 0],
+          [0.3, 0.018],
+          [0.4, 0],
+        ]);
+      ctx.translate(210, GROUND - h * bounce);
+      ctx.scale(
+        K(t, [
+          [0, 0.97],
+          [0.225, 0.97],
+          [0.31, 1.07],
+          [0.5, 1],
+        ]),
+        K(t, [
+          [0, 1.04],
+          [0.225, 1.04],
+          [0.31, 0.92],
+          [0.5, 1],
+        ]),
+      );
+      ctx.translate(-210, -GROUND);
+    }
+    ctx.drawImage(
+      renderer.render(motion, "idle", { height: h }),
+      0,
+      0,
+      420,
+      260,
+    );
+    ctx.restore();
   }
   if (fade) {
     const a = 1 - (now - fadeAt) / 120;
@@ -215,24 +402,34 @@ function draw(now) {
       ctx.globalAlpha = 1;
     } else fade = null;
   }
-  if (active?.name === "walk" && !active.video.paused && lastDraw)
+  if (
+    active &&
+    !active.video.paused &&
+    lastDraw &&
+    window.PetModel.clipMoving(active.clip, active.video.currentTime)
+  )
     api.command(
       "walk-step",
-      -walkDistance(
-        now - lastDraw,
-        active.clip.speed || 307.2,
-        CAT_HEIGHT / metadata.sitHeight,
-      ),
+      (facingRight ? 1 : -1) *
+        walkDistance(
+          now - lastDraw,
+          active.clip.speed,
+          catHeight() / metadata.sitHeight,
+        ),
     );
-  if (!smokeMode) {
+  if (!smokeMode && !prefs.systemCompanion) {
     const chosen = companion.tick({
       now,
       pose,
       busy,
       dragging: !!pointer,
       enabled: prefs.autonomous !== false,
+      typing: externalSenses.typing === true,
+      roaming: prefs.roaming !== false,
+      hour: new Date().getHours(),
     });
-    if (chosen) requestAction(chosen, true);
+    if (chosen && !(chosen === "walk" && prefs.roaming === false))
+      requestAction(chosen, true);
   }
   lastDraw = now;
   requestAnimationFrame(draw);
@@ -254,12 +451,15 @@ canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove", (e) => {
+  localPointer = { x: e.clientX, y: e.clientY };
   if (pointer) {
     if (
       !pointer.moved &&
       Math.hypot(e.screenX - pointer.x, e.screenY - pointer.y) > 5
     ) {
       pointer.moved = true;
+      liftAt = performance.now();
+      cancelAction();
       api.command("drag-start");
     }
     if (pointer.moved) api.command("drag-move");
@@ -269,20 +469,13 @@ canvas.addEventListener("pointermove", (e) => {
       lastHit = h;
       api.command("pointer", h);
     }
-    if (
-      h &&
-      e.clientY < 165 &&
-      e.clientY > 90 &&
-      Math.abs(e.movementX) > 2 &&
-      !active
-    )
-      blinkAt = performance.now() - 80;
   }
 });
 function endPointer(e) {
   if (!pointer) return;
   const p = pointer;
   pointer = null;
+  releaseAt = performance.now();
   api.command("drag-end");
   if (!p.moved) {
     clearTimeout(clickTimer);
@@ -312,27 +505,18 @@ document
 api.on("action", requestAction);
 api.on("bubble", bubble);
 api.on("state", (s) => {
-  prefs = s.prefs;
+  acceptState(s);
 });
 async function boot() {
   const state = await api.bootstrap();
-  prefs = state.prefs;
+  acceptState(state);
   smokeMode = state.smoke;
   metadata = await (await fetch("../assets/clips/clips.json")).json();
   for (const c of metadata.clips) clips.set(c.name, c);
-  atlas = new Image();
-  atlas.src = "../assets/cats.png";
-  await atlas.decode();
-  const sx = atlas.width / 1672,
-    sy = atlas.height / 940;
-  idleSprite = trim(atlas, 0, 0, Math.round(570 * sx), Math.round(470 * sy));
-  blinkSprite = trim(
-    atlas,
-    Math.round(570 * sx),
-    0,
-    Math.round(550 * sx),
-    Math.round(470 * sy),
-  );
+  rigData = await (await fetch("../assets/rig/rig.json")).json();
+  motion = new window.PetMotion.CatMotion(rigData);
+  renderer = new window.PetRenderer.RigRenderer(rigData);
+  await renderer.load();
   await videoReady(getVideo("wave"));
   ready = true;
   requestAnimationFrame(draw);
@@ -344,7 +528,9 @@ async function boot() {
   const startPixels = canvas.toDataURL();
   await new Promise((resolve) => setTimeout(resolve, 1500));
   if (renderedFrames - startFrames < 10 || canvas.toDataURL() === startPixels)
-    throw new Error(`桌宠待机画布未持续更新: frames=${renderedFrames-startFrames}, pixelsChanged=${canvas.toDataURL()!==startPixels}, visibility=${document.visibilityState}`);
+    throw new Error(
+      `桌宠待机画布未持续更新: frames=${renderedFrames - startFrames}, pixelsChanged=${canvas.toDataURL() !== startPixels}, visibility=${document.visibilityState}`,
+    );
   const probes = [];
   for (const c of metadata.clips) {
     const v = getVideo(c.name);
