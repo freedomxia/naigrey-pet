@@ -7,6 +7,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { createHash } = require("node:crypto");
 const { ClaudeSources } = require("./quota-claude.cjs");
+const { bindReminderIdentity } = require("./reminder-center.cjs");
 const PROVIDERS = ["codex", "claude"];
 const ENDPOINTS = Object.freeze({
   codex: "https://chatgpt.com/backend-api/wham/usage",
@@ -387,6 +388,7 @@ class QuotaService extends EventEmitter {
         connected: false,
         lastAttempt: null,
         fingerprint: null,
+        reminderIdentity: {},
         generation: 0,
         retryAt: 0,
         pending: null,
@@ -410,7 +412,23 @@ class QuotaService extends EventEmitter {
     return this.#states.get(provider);
   }
   snapshot() {
-    return structuredClone(PROVIDERS.map((p) => this.#states.get(p).value));
+    return PROVIDERS.map((p) => {
+      const state = this.#states.get(p);
+      return bindReminderIdentity(
+        structuredClone(state.value),
+        state.reminderIdentity,
+      );
+    });
+  }
+  #rememberIdentity(state, fingerprint) {
+    if (state.fingerprint !== fingerprint) state.reminderIdentity = {};
+    state.fingerprint = fingerprint;
+  }
+  #remind(reminder, state) {
+    this.emit(
+      "reminder",
+      bindReminderIdentity(reminder, state.reminderIdentity),
+    );
   }
   #change() {
     this.emit("change", this.snapshot());
@@ -589,7 +607,7 @@ class QuotaService extends EventEmitter {
         const local = await this.#claude.local(controller.signal);
         if (!valid()) return;
         if (local) {
-          state.fingerprint = local.fingerprint;
+          this.#rememberIdentity(state, local.fingerprint);
           state.value = {
             provider,
             status: "ok",
@@ -605,7 +623,7 @@ class QuotaService extends EventEmitter {
           );
           this.#change();
           if (this.#now() - local.capturedAt <= 900000)
-            for (const reminder of reminders) this.emit("reminder", reminder);
+            for (const reminder of reminders) this.#remind(reminder, state);
           return;
         }
         if (state.retryAt > this.#now())
@@ -712,7 +730,7 @@ class QuotaService extends EventEmitter {
         await this.#saveBackoff(0);
       }
       if (!valid()) return;
-      state.fingerprint = credential.fingerprint;
+      this.#rememberIdentity(state, credential.fingerprint);
       state.value = {
         provider,
         status: "ok",
@@ -727,7 +745,7 @@ class QuotaService extends EventEmitter {
         credential.fingerprint,
       );
       this.#change();
-      for (const reminder of reminders) this.emit("reminder", reminder);
+      for (const reminder of reminders) this.#remind(reminder, state);
     } catch (error) {
       if (!valid()) return;
       const known =
