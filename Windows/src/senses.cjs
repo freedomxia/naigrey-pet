@@ -88,6 +88,7 @@ class NativeSenses extends EventEmitter {
       typingRate: 1,
       pace: 0,
       keyAge: null,
+      doubleClickInterval: 500,
       keyboardAvailable: false,
       audioAvailable: false,
     };
@@ -188,6 +189,12 @@ class NativeSenses extends EventEmitter {
           keyAge,
           keyboardAvailable,
           audioAvailable,
+          doubleClickInterval:
+            Number.isInteger(data.doubleClickInterval) &&
+            data.doubleClickInterval >= 100 &&
+            data.doubleClickInterval <= 5000
+              ? data.doubleClickInterval
+              : 500,
         });
       }
     });

@@ -53,6 +53,10 @@ function catHeight() {
     ? prefs.catHeight
     : 140;
 }
+function doubleClickInterval() {
+  const ms = externalSenses.doubleClickInterval;
+  return Number.isInteger(ms) && ms >= 100 && ms <= 5000 ? ms : 500;
+}
 function currentFlip(now) {
   return (
     flipFrom + (flipTo - flipFrom) * window.PetMotion.ease((now - flipAt) / 180)
@@ -214,7 +218,7 @@ async function requestAction(action, autonomous = false) {
   if (!autonomous) companion.interact(performance.now());
   if (!ready) return;
   if (action === "meow") {
-    if (prefs.motion) motion.meow();
+    motion.meow();
     return;
   }
   if (action === "blink") {
@@ -324,24 +328,23 @@ function draw(now) {
       }
       lastPointerSample = { ...sensed, at: now };
     }
-    if (prefs.motion !== false)
-      motion.update(
-        Math.max(0.001, Math.min(0.05, (now - (lastDraw || now - 16)) / 1000)),
-        "idle",
-        false,
-        {
-          pointer: sensed,
-          pointerSpeed,
-          pointerOverHead:
-            sensed &&
-            sensed.x > 135 &&
-            sensed.x < 520 &&
-            sensed.y > 10 &&
-            sensed.y < 300,
-          held: !!pointer?.moved,
-          fixated: !!externalSenses.fixated,
-        },
-      );
+    motion.update(
+      Math.max(0.001, Math.min(0.05, (now - (lastDraw || now - 16)) / 1000)),
+      "idle",
+      false,
+      {
+        pointer: sensed,
+        pointerSpeed,
+        pointerOverHead:
+          sensed &&
+          sensed.x > 135 &&
+          sensed.x < 520 &&
+          sensed.y > 10 &&
+          sensed.y < 300,
+        held: !!pointer?.moved,
+        fixated: !!externalSenses.fixated,
+      },
+    );
     ctx.save();
     // Mac carried pose and soft landing, applied around the paw line.
     if (pointer?.moved) {
@@ -452,6 +455,7 @@ function hit(e) {
 }
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || !hit(e)) return;
+  clearTimeout(clickTimer);
   pointer = { x: e.screenX, y: e.screenY, moved: false };
   canvas.setPointerCapture(e.pointerId);
 });
@@ -462,6 +466,7 @@ canvas.addEventListener("pointermove", (e) => {
       !pointer.moved &&
       Math.hypot(e.screenX - pointer.x, e.screenY - pointer.y) > 5
     ) {
+      clearTimeout(clickTimer);
       pointer.moved = true;
       liftAt = performance.now();
       cancelAction();
@@ -484,11 +489,15 @@ function endPointer(e) {
   api.command("drag-end");
   if (!p.moved) {
     clearTimeout(clickTimer);
-    clickTimer = setTimeout(() => api.command("interaction", "wave"), 260);
+    clickTimer = setTimeout(
+      () => api.command("interaction", "wave"),
+      doubleClickInterval(),
+    );
   }
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", () => {
+  clearTimeout(clickTimer);
   pointer = null;
   api.command("drag-end");
 });

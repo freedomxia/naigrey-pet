@@ -83,3 +83,15 @@ test("native helper exit clears active sensed state", (t) => {
   assert.equal(s.snapshot().status, "unavailable");
   assert.equal(s.snapshot().music, false);
 });
+test("native double-click interval is bounded and defaults safely", (t) => {
+  const { s, send } = transport(t);
+  assert.equal(s.snapshot().doubleClickInterval, 500);
+  for (const value of [100, 500, 1200, 5000]) {
+    send({ type: "senses", doubleClickInterval: value });
+    assert.equal(s.snapshot().doubleClickInterval, value);
+  }
+  for (const value of [0, 99, 5001, -1, "900", null]) {
+    send({ type: "senses", doubleClickInterval: value });
+    assert.equal(s.snapshot().doubleClickInterval, 500);
+  }
+});

@@ -33,8 +33,9 @@ try {
         if ($message.type -eq 'senses') {
             $sample = $true
             foreach ($property in $message.PSObject.Properties.Name) {
-                if ($property -notin @('type','keyboardAvailable','keyAge','audioActive')) { throw 'Unexpected sensor field.' }
+                if ($property -notin @('type','keyboardAvailable','keyAge','audioActive','doubleClickInterval')) { throw 'Unexpected sensor field.' }
             }
+            if ($message.doubleClickInterval -lt 100 -or $message.doubleClickInterval -gt 5000) { throw 'Invalid native double-click interval.' }
             if ($null -ne $message.keyAge -and $message.keyAge -lt 0) { throw 'Invalid key age.' }
         }
     }

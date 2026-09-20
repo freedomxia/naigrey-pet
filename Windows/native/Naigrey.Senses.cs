@@ -15,6 +15,7 @@ internal static class Program {
     [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr payload);
     [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string name);
+    [DllImport("user32.dll")] private static extern uint GetDoubleClickTime();
     private static readonly KeyboardCallback callback = OnKeyboard;
     private static IntPtr hook;
     private static long lastKey = -1;
@@ -82,7 +83,7 @@ internal static class Program {
             while(true) {
                 long tick=Interlocked.Read(ref lastKey);
                 double? age=tick<0 ? (double?)null : Math.Max(0,(double)(clock.ElapsedTicks-tick)/Stopwatch.Frequency);
-                Write(new {type="senses",keyboardAvailable=hook!=IntPtr.Zero,keyAge=age,audioActive=AudioActivity.Read()});
+                Write(new {type="senses",keyboardAvailable=hook!=IntPtr.Zero,keyAge=age,audioActive=AudioActivity.Read(),doubleClickInterval=GetDoubleClickTime()});
                 Thread.Sleep(250);
             }
         });samples.IsBackground=true;samples.SetApartmentState(ApartmentState.MTA);samples.Start();
