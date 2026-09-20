@@ -116,6 +116,8 @@ function windowFor(file, options) {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      // A desktop companion must keep drawing while other applications have focus.
+      backgroundThrottling: file !== "pet.html",
     },
     ...options,
   });
