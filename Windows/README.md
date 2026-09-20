@@ -4,12 +4,13 @@
 
 ## 安装与使用
 
-下载 [Windows x64 预览包](https://github.com/freedomxia/naigrey-pet/actions/runs/35455662509/artifacts/10588102321)，解压后运行 `naigrey-windows-0.1.0-x64-setup.exe` 安装；也可解压其中的便携 ZIP，运行 `奶灰桌宠.exe`。GitHub Actions 工件需要登录 GitHub 下载，保留 14 天。
+下载 [Windows x64 预览包](https://github.com/freedomxia/naigrey-pet/actions/runs/35483112585/artifacts/10596751478)，解压后运行 `naigrey-windows-0.1.1-x64-setup.exe` 安装；也可解压其中的便携 ZIP，运行 `奶灰桌宠.exe`。GitHub Actions 工件需要登录 GitHub 下载，保留 14 天。
 
 [Windows 自动构建](../.github/workflows/windows.yml)已启用。成功运行会提供 `naigrey-windows-x64-preview` 工件，包含 NSIS 安装程序、便携 ZIP 和 SHA-256 校验文件。构建记录见 [GitHub Actions](https://github.com/freedomxia/naigrey-pet/actions/workflows/windows.yml)。
 
 首版安装包尚未使用 Windows 代码签名证书。安装前核对来源和同包 `SHA256SUMS.txt`。
 
+- 默认自主活动：启动后招手，随后间隔选择走动、伸懒腰、打哈欠和短暂小睡。可在设置关闭。
 - 单击招手，双击睡觉 / 叫醒，拖动搬家，头顶移动鼠标摸摸猫。
 - 右键小猫或点击托盘菜单，选择玩球、打字、伸懒腰、走路、听音乐。
 - 点击 AI 按钮打开猫咪下方的横版额度卡片，点击别处收起。屏幕下方空间不足时面板放到猫咪上方。
