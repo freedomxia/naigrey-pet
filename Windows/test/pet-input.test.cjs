@@ -20,6 +20,11 @@ function renderer() {
   const element = {
     addEventListener() {},
     classList: { add() {}, remove() {} },
+    style: {},
+    offsetLeft: 208,
+    offsetTop: 280,
+    offsetWidth: 30,
+    offsetHeight: 25,
   };
   const context = vm.createContext({
     console,
@@ -129,6 +134,10 @@ test("walking out from under a still cursor stops the window swallowing clicks",
   assert.deepEqual(r.commands.at(-1), ["pointer", true]);
   r.run("catX=400;externalSenses={cursor:{x:102,y:100}};draw(48)");
   assert.equal(r.run("lastHit"), false);
+  // The AI badge sits over the canvas and the pixels under it can be fully
+  // transparent, so hit-testing them alone would make the button unclickable.
+  r.run("externalSenses={cursor:{x:220,y:290}};draw(64)");
+  assert.equal(r.run("lastHit"), true, "badge became click-through");
 });
 test("turning off reminder motion keeps original idle rig and requested meow alive", async () => {
   const r = renderer();

@@ -533,7 +533,15 @@ function retestPointer() {
   if (!c || pointer) return;
   if (lastCursor && lastCursor.x === c.x && lastCursor.y === c.y) return;
   lastCursor = { x: c.x, y: c.y };
-  const h = hitAt(c.x, c.y);
+  const badge = document.querySelector("#ai");
+  // The badge is an element sitting over the canvas, and the pixels beneath it
+  // can be fully transparent — hit-testing those would make it unclickable.
+  const overBadge =
+    c.x >= badge.offsetLeft &&
+    c.x < badge.offsetLeft + badge.offsetWidth &&
+    c.y >= badge.offsetTop &&
+    c.y < badge.offsetTop + badge.offsetHeight;
+  const h = overBadge || hitAt(c.x, c.y);
   if (h !== lastHit) {
     lastHit = h;
     api.command("pointer", h);
