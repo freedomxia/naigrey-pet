@@ -23,6 +23,7 @@ const {
   CAT_SIZES,
   DEFAULT_CAT_HEIGHT,
   catHeights,
+  nearestCatHeight,
   WINDOW_WIDTH: W,
   WINDOW_HEIGHT: H,
   CENTER_X: CX,
@@ -150,7 +151,12 @@ function load() {
     prefs.mutedProviders = Array.isArray(v.mutedProviders)
       ? v.mutedProviders.filter((p) => ["codex", "claude"].includes(p))
       : [];
-    if (catHeights().includes(v.catHeight)) prefs.catHeight = v.catHeight;
+    // 0.2.0 shipped a 140 size the Mac never had. Dropping it should nudge the
+    // cat to the nearest kept size, not shrink it back to the default.
+    const height = catHeights().includes(v.catHeight)
+      ? v.catHeight
+      : nearestCatHeight(v.catHeight);
+    if (height !== null) prefs.catHeight = height;
     if (Number.isFinite(v.position?.x) && Number.isFinite(v.position?.y))
       prefs.position = v.position;
     for (const key of ["mutedUntil", "quietOverrideUntil"])

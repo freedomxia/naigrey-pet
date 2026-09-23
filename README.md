@@ -10,7 +10,7 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-555555?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-555555?style=flat-square)
 
-[**Windows 安装程序（.exe）**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.1/naigrey-windows-0.2.1-x64-setup.exe) · [**macOS 下载（.zip）**](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
+[**Windows 安装程序（.exe）**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.2/naigrey-windows-0.2.2-x64-setup.exe) · [**macOS 下载（.zip）**](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
 
 <img src="docs/images/cat-poses.png" alt="奶灰小猫的六种形象：坐着、眯眼、招手、睡觉、打哈欠和走路" width="760">
 
@@ -63,7 +63,7 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 
 ### Windows 10 / 11（64 位）
 
-1. [**下载 Windows 安装程序：naigrey-windows-0.2.1-x64-setup.exe**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.1/naigrey-windows-0.2.1-x64-setup.exe)。
+1. [**下载 Windows 安装程序：naigrey-windows-0.2.2-x64-setup.exe**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.2/naigrey-windows-0.2.2-x64-setup.exe)。
 2. 如果旧版正在运行，先从托盘退出奶灰。
 3. 双击下载的 **`.exe`** 文件，按安装向导完成安装，再打开桌面快捷方式。
 

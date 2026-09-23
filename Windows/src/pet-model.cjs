@@ -13,6 +13,16 @@
   ];
   const DEFAULT_CAT_HEIGHT = 100;
   const catHeights = () => CAT_SIZES.map(([, h]) => h);
+  /// The closest shipped size to a stored one, or null when the value is not a
+  /// usable height. A build that dropped a size should move the cat as little as
+  /// possible rather than snap it back to the default.
+  function nearestCatHeight(value) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+      return null;
+    return catHeights().reduce((best, h) =>
+      Math.abs(h - value) < Math.abs(best - value) ? h : best,
+    );
+  }
   const paths = {
     idle: ["idle"],
     wave: ["wave", "idle"],
@@ -204,6 +214,7 @@
     CAT_SIZES,
     DEFAULT_CAT_HEIGHT,
     catHeights,
+    nearestCatHeight,
     IdleCompanion,
     advanceWalk,
     catArea,
