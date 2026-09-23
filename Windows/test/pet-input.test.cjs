@@ -108,6 +108,28 @@ test("native accessibility double-click interval delays a single greet; drag can
   d.event("pointerup");
   assert.deepEqual(d.interactions(), []);
 });
+test("walking out from under a still cursor stops the window swallowing clicks", async () => {
+  const r = renderer();
+  // Opaque only where the cat is: alpha follows the mock cat's x position.
+  r.run(
+    "ready=true;prefs={motion:false,systemCompanion:true};" +
+      "rigData={sizes:{idle:[466,463]},rigs:{idle:{width:546,height:543}}};" +
+      "motion={petting:{value:0},update(){},meow(){}};renderer={render(){return {}}};" +
+      "catX=100;ctx.getImageData=(x)=>({data:[0,0,0,Math.abs(x/2-catX)<40?255:0]});",
+  );
+  // The window captures by default, so start by walking the cat away from the
+  // parked cursor. The cursor never moves in this test: the only signal is the
+  // window-relative position shifting as the window slides.
+  r.run("catX=400;externalSenses={cursor:{x:100,y:100}};draw(16)");
+  assert.equal(r.run("lastHit"), false, "still capturing after the cat left");
+  assert.deepEqual(r.commands.at(-1), ["pointer", false]);
+  // Back under the cursor, it has to capture again or the cat is unclickable.
+  r.run("catX=100;externalSenses={cursor:{x:101,y:100}};draw(32)");
+  assert.equal(r.run("lastHit"), true);
+  assert.deepEqual(r.commands.at(-1), ["pointer", true]);
+  r.run("catX=400;externalSenses={cursor:{x:102,y:100}};draw(48)");
+  assert.equal(r.run("lastHit"), false);
+});
 test("turning off reminder motion keeps original idle rig and requested meow alive", async () => {
   const r = renderer();
   r.run(

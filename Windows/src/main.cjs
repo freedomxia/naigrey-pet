@@ -229,6 +229,9 @@ function pointerSenses() {
   return {
     ...senses?.snapshot(),
     pointer: { x: target.x - (b?.x || 0), y: target.y - (b?.y || 0) },
+    // The real cursor, never the ball: the renderer hit-tests with this to
+    // decide whether the window should swallow clicks.
+    cursor: { x: p.x - (b?.x || 0), y: p.y - (b?.y || 0) },
     gazing,
     fixated: !!(ball && (playState !== "off" || ball.held)),
   };
