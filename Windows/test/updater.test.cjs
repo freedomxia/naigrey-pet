@@ -286,6 +286,45 @@ test("cancel bounds fetch implementations that ignore AbortSignal", async (t) =>
   await assert.rejects(pending, (error) => error.code === "cancelled");
   assert.deepEqual(await fs.readdir(directory), []);
 });
+test("a slow but moving download survives, a stalled one does not", async (t) => {
+  const body = `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`;
+  // 64 chunks of "MZok" spread past any fixed total: the transfer is slow, not
+  // dead, and a 120 MiB installer on a thin link looks exactly like this.
+  const parts = ["M", "Z", "o", "k"];
+  const trickle = (stallAfter) => async (url) => {
+    if (url.endsWith("SHA256SUMS.txt.sig")) return new Response(sign(body));
+    if (url.endsWith("SHA256SUMS.txt")) return new Response(body);
+    let sent = 0;
+    return new Response(
+      new ReadableStream({
+        pull(c) {
+          return new Promise((r) =>
+            setTimeout(() => {
+              if (stallAfter !== null && sent >= stallAfter) return r();
+              if (sent >= parts.length) c.close();
+              else c.enqueue(Buffer.from(parts[sent++]));
+              r();
+            }, 40),
+          );
+        },
+      }),
+    );
+  };
+  const keepalive = setInterval(() => {}, 20);
+  t.after(() => clearInterval(keepalive));
+  // Four 40ms chunks outlast a 100ms total, yet the transfer never stops.
+  const moving = await fixture(t, trickle(null), { stallTimeout: 100 });
+  const file = await moving.u.download(
+    pickRelease([release()], { currentVersion: "0.2.0" }),
+  );
+  assert.equal(await fs.readFile(file, "utf8"), "MZok");
+  await moving.u.cleanup();
+  const stalled = await fixture(t, trickle(2), { stallTimeout: 150 });
+  await assert.rejects(
+    stalled.u.download(pickRelease([release()], { currentVersion: "0.2.0" })),
+    (e) => e.code === "timeout",
+  );
+});
 test("request timeout is enforced even when the fetch never settles", async (t) => {
   let entered;
   const ready = new Promise((r) => (entered = r));

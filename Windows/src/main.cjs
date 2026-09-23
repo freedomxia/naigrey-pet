@@ -39,6 +39,7 @@ const { Updater } = require("./updater.cjs");
 const clipMetadata = require("../assets/clips/clips.json");
 const rigMetadata = require("../assets/rig/rig.json");
 const playClip = clipMetadata.clips.find((c) => c.name === "play");
+const REPO_RELEASES = "https://github.com/freedomxia/naigrey-pet/releases";
 const demo = process.argv.includes("--demo"),
   smoke = process.argv.includes("--smoke-test");
 if (smoke)
@@ -569,14 +570,22 @@ async function checkUpdates(manual = false) {
     const error = await shell.openPath(file);
     if (error) throw new Error("installer");
     app.quit();
-  } catch {
+  } catch (error) {
     await updater.cleanup();
-    if (manual)
-      dialog.showMessageBox(pet, {
+    // Say which step failed. "更新未完成" alone left a slow download and a
+    // failed signature looking identical, with no way to tell them apart.
+    if (manual) {
+      const choice = await dialog.showMessageBox(pet, {
         type: "error",
         message: "更新未完成，请稍后重试。",
-        detail: "未运行未经校验的安装包。",
+        detail: `${error?.message || "未知错误。"}\n未运行未经校验的安装包。安装包较大，网络慢时可以到发布页手动下载。`,
+        buttons: ["打开发布页", "好"],
+        defaultId: 1,
+        cancelId: 1,
       });
+      if (choice.response === 0)
+        shell.openExternal(`${REPO_RELEASES}`);
+    }
   } finally {
     updating = false;
     tray?.setContextMenu(menu());
@@ -662,10 +671,7 @@ function menu() {
         },
     {
       label: "下载与版本",
-      click: () =>
-        shell.openExternal(
-          "https://github.com/freedomxia/naigrey-pet/releases",
-        ),
+      click: () => shell.openExternal(REPO_RELEASES),
     },
     { type: "separator" },
     {

@@ -267,9 +267,11 @@ class Updater {
     directory = path.join(os.tmpdir(), "naigrey-updates"),
     allowPrerelease = false,
     publicKey = PUBLIC_KEY,
+    stallTimeout = 60000,
     now = Date.now,
   } = {}) {
     this.publicKey = publicKey;
+    this.stallTimeout = stallTimeout;
     if (!semver(currentVersion)) throw failure("feed");
     Object.assign(this, {
       currentVersion,
@@ -285,16 +287,22 @@ class Updater {
     this.pendingCheck = null;
     this.pendingDownload = null;
   }
-  async operation(timeout, task) {
+  /// `stall`, when given, turns the deadline into an idle timeout: every
+  /// heartbeat re-arms it. A 120 MiB installer over a slow link cannot be held
+  /// to a fixed total — it is making progress, just not quickly.
+  async operation(timeout, task, stall = 0) {
     const controller = new AbortController();
     this.controllers.add(controller);
-    const timer = setTimeout(
-      () => controller.abort(failure("timeout")),
-      timeout,
-    );
-    timer.unref?.();
+    let timer;
+    const arm = (ms) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(failure("timeout")), ms);
+      timer.unref?.();
+    };
+    arm(timeout);
+    const beat = stall > 0 ? () => arm(stall) : () => {};
     try {
-      return await task(controller.signal);
+      return await task(controller.signal, beat);
     } catch (error) {
       throw controller.signal.aborted
         ? controller.signal.reason
@@ -440,7 +448,9 @@ class Updater {
       officialAsset(release.tag, MANIFEST_SIGNATURE, release.signatureURL);
     if (!valid) return Promise.reject(failure("feed"));
     const info = { ...release };
-    const task = this.operation(300000, async (signal) => {
+    const task = this.operation(
+      300000,
+      async (signal, beat) => {
       let scratch,
         handle,
         success = false;
@@ -478,6 +488,7 @@ class Updater {
           Math.min(MAX_INSTALLER, info.size),
           signal,
           async (chunk) => {
+            beat();
             hash.update(chunk);
             await handle.writeFile(chunk);
           },
@@ -504,7 +515,10 @@ class Updater {
           this.owned.delete(scratch);
         }
       }
-    }).finally(() => {
+      },
+      // No bytes for a minute means the transfer is dead, not merely slow.
+      this.stallTimeout,
+    ).finally(() => {
       if (this.pendingDownload === task) this.pendingDownload = null;
     });
     this.pendingDownload = task;
