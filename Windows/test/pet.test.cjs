@@ -78,6 +78,22 @@ test("high-refresh walking preserves subpixel distance until window positioning"
   assert.ok(Math.abs(x - 404) < 0.001);
   assert.equal(advanceWalk(1, -4, 360, { x: 0, width: 1920 }), 0);
 });
+test("a dropped size migrates to the nearest kept one, not back to the default", () => {
+  const {
+    nearestCatHeight,
+    catHeights,
+    DEFAULT_CAT_HEIGHT,
+  } = require("../src/pet-model.cjs");
+  // 0.2.0 offered 140. Falling back to the default would shrink the cat by 29%;
+  // the nearest kept size moves it by 7%.
+  assert.equal(nearestCatHeight(140), 130);
+  assert.notEqual(nearestCatHeight(140), DEFAULT_CAT_HEIGHT);
+  for (const h of catHeights()) assert.equal(nearestCatHeight(h), h);
+  assert.equal(nearestCatHeight(40), 72);
+  assert.equal(nearestCatHeight(999), 170);
+  for (const bad of [undefined, null, "130", NaN, 0, -5])
+    assert.equal(nearestCatHeight(bad), null, String(bad));
+});
 test("walking reaches the screen edge instead of stopping a margin short", () => {
   const {
     catArea,
