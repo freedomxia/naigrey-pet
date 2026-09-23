@@ -31,6 +31,7 @@ const {
   CENTER_X,
   DEFAULT_CAT_HEIGHT,
   catHeights,
+  bubbleFontSize,
 } = window.PetModel;
 /// Widest silhouette in device pixels at the current size, or null before the
 /// rig metadata has loaded. Shared by the badge and the bubble so both stay
@@ -48,7 +49,7 @@ function bubble(value) {
   const seconds =
     Number.isFinite(value?.seconds) && value.seconds > 0 ? value.seconds : 2.5;
   const el = document.querySelector("#bubble"),
-    size = Math.min(13, Math.max(10, catHeight() * 0.1)),
+    size = bubbleFontSize(catHeight()),
     pad = size * 0.75,
     span = catSpan();
   el.style.fontSize = size + "px";

@@ -128,30 +128,51 @@
   function sleepContinuation(requested) {
     return requested === "sleep" ? null : requested;
   }
-  /// How far the drawn cat reaches either side of CENTER_X at this size, taken
-  /// over every clip and rig pose the way PetLayout's `reach` is on the Mac.
-  function silhouetteHalfWidth(clips, rig, catHeight) {
-    let half = 0;
+  /// PetLayout in Source/Sprites.swift: fontSize = min(13, max(10, h * 0.1)).
+  function bubbleFontSize(catHeight) {
+    return Math.min(13, Math.max(10, catHeight * 0.1));
+  }
+  /// How far the fixed window may hang off each screen edge while the drawn cat
+  /// — and the room PetLayout keeps above its head for the bubble — stays on
+  /// screen. Taken over every clip anchor and rig pose, the way `reach` is on
+  /// the Mac, using the same geometry clipRect and the rig renderer draw with.
+  function roamInsets(clips, rig, catHeight) {
+    let half = 0,
+      above = 0;
     const cs = catHeight / clips.sitHeight;
     for (const c of clips.clips)
-      for (const anchor of [c.start, c.end || c.start])
+      for (const anchor of [c.start, c.end || c.start]) {
         half = Math.max(half, anchor[0] * cs, (c.size[0] - anchor[0]) * cs);
+        above = Math.max(above, anchor[1] * cs);
+      }
     const rs = catHeight / rig.sizes.idle[1];
-    for (const size of Object.values(rig.sizes))
+    for (const size of Object.values(rig.sizes)) {
       half = Math.max(half, (size[0] / 2) * rs);
-    return half;
-  }
-  /// The window is a fixed box with the cat drawn centred, so its edges carry a
-  /// transparent margin. Only the silhouette has to stay on screen; clamping the
-  /// whole window makes a small cat turn around a margin's width early.
-  function catArea(area, half) {
-    const margin = Math.min(CENTER_X, WINDOW_WIDTH - CENTER_X) - half;
-    if (!(margin > 0)) return area;
+      above = Math.max(above, (size[1] + rig.pad) * rs);
+    }
+    const side = Math.max(
+      0,
+      Math.min(CENTER_X, WINDOW_WIDTH - CENTER_X) - half,
+    );
+    const headroom = bubbleFontSize(catHeight) * 2.4 + 6;
+    // The window's own bottom margin is already tight, so nothing is given back
+    // there; the top is where a fixed 320px box wastes most of the screen.
     return {
-      x: area.x - margin,
-      y: area.y,
-      width: area.width + margin * 2,
-      height: area.height,
+      left: side,
+      right: side,
+      top: Math.max(0, GROUND - above - headroom),
+      bottom: 0,
+    };
+  }
+  /// The window is a fixed box with the cat drawn near its bottom centre, so its
+  /// edges carry transparent margin. Only the silhouette has to stay on screen;
+  /// clamping the whole window keeps the cat out of a band at every edge.
+  function catArea(area, insets) {
+    return {
+      x: area.x - insets.left,
+      y: area.y - insets.top,
+      width: area.width + insets.left + insets.right,
+      height: area.height + insets.top + insets.bottom,
     };
   }
   function advanceWalk(x, delta, width, area) {
@@ -218,7 +239,8 @@
     IdleCompanion,
     advanceWalk,
     catArea,
-    silhouetteHalfWidth,
+    roamInsets,
+    bubbleFontSize,
     sleepContinuation,
     actionPath,
     clampPosition,

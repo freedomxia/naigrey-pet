@@ -227,6 +227,24 @@ test("the tray menu matches the Mac's entries and reflects sleep and update stat
     false,
   );
 });
+test("a pending update is announced for six seconds and stays visible in the tray", async (t) => {
+  const h = await harness(t);
+  h.run(
+    "updateRelease={version:'9.9.9'};tray&&tray.setToolTip('奶灰桌宠 · 有新版本 9.9.9')",
+  );
+  const labels = h.run("menu().items").map((i) => i.label);
+  assert.ok(
+    labels.includes("换上新衣服 · 9.9.9"),
+    "menu offers the pending version",
+  );
+  // The Mac says it for six seconds; 2.5 is the default and too easy to miss.
+  const source = require("node:fs").readFileSync(
+    require.resolve("../src/main.cjs"),
+    "utf8",
+  );
+  assert.match(source, /有新衣服啦～ \$\{release\.version\}[^}]*seconds: 6/s);
+  assert.match(source, /setToolTip\(`奶灰桌宠 · 有新版本/);
+});
 test("preview shows a sample bubble without touching any account", async (t) => {
   const h = await harness(t);
   await h.command("preview");
