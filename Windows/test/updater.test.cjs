@@ -286,6 +286,39 @@ test("cancel bounds fetch implementations that ignore AbortSignal", async (t) =>
   await assert.rejects(pending, (error) => error.code === "cancelled");
   assert.deepEqual(await fs.readdir(directory), []);
 });
+test("download reports progress as bytes land", async (t) => {
+  const seen = [];
+  const { u } = await fixture(
+    t,
+    serve(
+      `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              for (const part of ["M", "Z", "o", "k"])
+                c.enqueue(Buffer.from(part));
+              c.close();
+            },
+          }),
+        ),
+    ),
+  );
+  await u.download(
+    pickRelease([release()], { currentVersion: "0.2.0" }),
+    (received, total) => seen.push([received, total]),
+  );
+  // Four one-byte chunks, each reported against the asset's declared size.
+  assert.deepEqual(
+    seen.map(([r]) => r),
+    [1, 2, 3, 4],
+  );
+  assert.ok(
+    seen.every(([, total]) => total === 4),
+    "total should be the asset size",
+  );
+  await u.cleanup();
+});
 test("a slow but moving download survives, a stalled one does not", async (t) => {
   const body = `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`;
   // 64 chunks of "MZok" spread past any fixed total: the transfer is slow, not

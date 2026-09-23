@@ -431,7 +431,9 @@ class Updater {
     this.pendingCheck = task;
     return task;
   }
-  download(release) {
+  /// `onProgress(received, total)` is called as bytes land, so a 120 MiB
+  /// transfer over a thin link is not several silent minutes.
+  download(release, onProgress) {
     if (this.pendingDownload) return Promise.reject(failure("busy"));
     const valid =
       release &&
@@ -477,6 +479,7 @@ class Updater {
           this.publicKey,
         );
         const checksum = checksumFor(manifest.toString("utf8"), info.assetName);
+        let received = 0;
         const partial = path.join(scratch, "installer.part"),
           destination = path.join(scratch, info.assetName),
           hash = createHash("sha256");
@@ -491,6 +494,8 @@ class Updater {
             beat();
             hash.update(chunk);
             await handle.writeFile(chunk);
+            received += chunk.length;
+            onProgress?.(received, info.size);
           },
         );
         if (

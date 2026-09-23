@@ -575,12 +575,33 @@ async function checkUpdates(manual = false) {
       cancelId: 1,
     });
     if (choice.response !== 0) return;
-    const file = await updater.download(release);
+    // The Mac zip is small enough to stay silent through; a 120 MiB installer
+    // on a thin link is minutes of apparent nothing without this.
+    present("bubble", { text: "我去换件新衣服，马上回来～", seconds: 8 });
+    let announced = 0;
+    const file = await updater.download(release, (received, total) => {
+      const at = Date.now();
+      if (at - announced < 700) return;
+      announced = at;
+      const percent =
+        total > 0 ? Math.min(99, Math.floor((received / total) * 100)) : null;
+      const text =
+        percent === null
+          ? "正在下载新衣服…"
+          : `正在下载新衣服… ${percent}%`;
+      tray?.setToolTip(`奶灰桌宠 · ${text}`);
+      present("bubble", { text, seconds: 8, quiet: true });
+    });
+    tray?.setToolTip("奶灰桌宠 · 正在安装…");
+    present("bubble", { text: "下载好啦，这就换上～", seconds: 8 });
     const error = await shell.openPath(file);
     if (error) throw new Error("installer");
     app.quit();
   } catch (error) {
     await updater.cleanup();
+    tray?.setToolTip(
+      updateRelease ? `奶灰桌宠 · 有新版本 ${updateRelease.version}` : "奶灰桌宠",
+    );
     // Say which step failed. "更新未完成" alone left a slow download and a
     // failed signature looking identical, with no way to tell them apart.
     if (manual) {

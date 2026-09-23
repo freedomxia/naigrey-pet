@@ -19,7 +19,18 @@ function renderer() {
   };
   const element = {
     addEventListener() {},
-    classList: { add() {}, remove() {} },
+    classList: {
+      _s: new Set(),
+      add(c) {
+        this._s.add(c);
+      },
+      remove(c) {
+        this._s.delete(c);
+      },
+      contains(c) {
+        return this._s.has(c);
+      },
+    },
     style: {},
     offsetLeft: 208,
     offsetTop: 280,
@@ -138,6 +149,19 @@ test("walking out from under a still cursor stops the window swallowing clicks",
   // transparent, so hit-testing them alone would make the button unclickable.
   r.run("externalSenses={cursor:{x:220,y:290}};draw(64)");
   assert.equal(r.run("lastHit"), true, "badge became click-through");
+});
+test("a quiet bubble refreshes its text without replaying the pop", async () => {
+  const r = renderer();
+  r.run("rigData={sizes:{idle:[466,463]}}");
+  let popped = 0;
+  r.run("bubble({text:'正在下载新衣服… 1%', seconds:8})");
+  // A normal bubble drops and re-adds `visible` so the animation restarts.
+  const el = r.run("document.querySelector('#bubble')");
+  assert.equal(el.classList.contains("visible"), true);
+  r.run("bubble({text:'正在下载新衣服… 2%', seconds:8, quiet:true})");
+  assert.equal(el.textContent, "正在下载新衣服… 2%");
+  assert.equal(el.classList.contains("visible"), true, "stayed visible");
+  void popped;
 });
 test("turning off reminder motion keeps original idle rig and requested meow alive", async () => {
   const r = renderer();
