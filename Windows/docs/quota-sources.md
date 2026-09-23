@@ -36,7 +36,7 @@ Codex 的主窗口、周窗口、Spark 和代码审查窗口保留原有解析�
 
 Claude 身份使用组织 UUID，取不到时用配置目录路径，与 `ClaudeQuotaSources.swift` 相同；SHA-256 仅进程内部使用。切换来源或令牌轮换不重置提醒基线；切换组织清除旧源缓存，重新建立提醒基线；和 Mac 一样可触发新账号当前阈值，但不会将账号切换当作额度恢复。配置目录 fallback 和 Mac 一样无法辨别没有组织信息的同目录账号切换，这是明确的证据边界。原始账号、token、hash 均不进入 snapshot/change/reminder。
 
-主窗口 80%/100% 阈值、每周 100% 和 95% 迟滞、重置峰值至少 15%、下降至少 20 个百分点或峰值 30% 后降至 10% 规则继续沿用。代码审查和 Spark 仅显示。现有 Windows 提醒事件用 `threshold-80/threshold-100` 表示已用比例；Mac EventRules 的事件名用剩余比例 `threshold-20/threshold-0`，UI 集成应按 Windows 接口解读。会话耗尽另发 `session-limit`，和每周一样使用 95% 迟滞；首个样本不会发 limit 事件。即使主窗口暂时缺失，每周仍可独立触发。超过 15 分钟的缓存读数不产生提醒。
+主窗口 80%/100% 阈值、每周 100% 和 95% 迟滞、重置峰值至少 15%、下降至少 20 个百分点或峰值 30% 后降至 10% 规则继续沿用。代码审查和 Spark 仅显示。现有 Windows 提醒事件用 `threshold-80/threshold-100` 表示已用比例；Mac EventRules 的事件名用剩余比例 `threshold-20/threshold-0`，UI 集成应按 Windows 接口解读。事件名不同，但呈现文案与 Mac `AIEventRules.emit` 一致：标题为「提供方 · 窗口名」，正文 100% 为「额度已用完。」、80% 为「已用 N% 额度。」、重置为「额度已重置。」，并一律附带重置时间（固定绝对形式，不跟卡片的倒计时偏好）。会话耗尽另发 `session-limit`，和每周一样使用 95% 迟滞；首个样本不会发 limit 事件。即使主窗口暂时缺失，每周仍可独立触发。超过 15 分钟的缓存读数不产生提醒。
 
 ## 集成 API
 
@@ -60,7 +60,7 @@ service.stop();
 
 构造函数不读凭证、不启动进程。必须 connect 后才读取；自动刷新空闲每 300 秒、有忙碌会话或重置到期时每 60 秒；相同来源并发合并。主进程负责保存提供方选择、续期授权和通知策略。`stateDirectory` 推荐 Electron `userData`，不包含凭证，仅保存限流到期。`claudeAdapters: {desktop,cli}` 仅用于测试注入。
 
-快照格式沿用 `{provider,status,source,windows,message,observedAt}`；缓存额外提供真实 `sourceAt`。同账号的暂时错误保留原读数，超过 15 分钟标记 `stale`；认证失败、格式不支持或账号已变化时清空窗口。CLI/缓存同样不产生跨账号旧结果。Claude 401/403 会重新读取凭证，最多再请求一次。网络响应上限 2 MB，凭证文件 1 MB，请求 15 秒超时，拒绝重定向，不携带 cookie，不缓存响应，错误不含响应正文或异常原文。
+快照格式沿用 `{provider,status,source,windows,message,observedAt}`；缓存额外提供真实 `sourceAt`。`snapshot()` 另外为每个窗口派生 `isExtra`（Codex 的 `primary`/`secondary`、Claude 的 `session`/`weekly_all` 之外都是 extra），与 Mac `LimitWindow.local()` 的派生位置对应，额度卡片据此决定哪些窗口上首屏。`QuotaService.refreshing()` 返回当前有读取在途的提供方，供卡片显示「更新中…」。同账号的暂时错误保留原读数，超过 15 分钟标记 `stale`；认证失败、格式不支持或账号已变化时清空窗口。CLI/缓存同样不产生跨账号旧结果。Claude 401/403 会重新读取凭证，最多再请求一次。网络响应上限 2 MB，凭证文件 1 MB，请求 15 秒超时，拒绝重定向，不携带 cookie，不缓存响应，错误不含响应正文或异常原文。
 
 ## 验证与未覆盖项
 

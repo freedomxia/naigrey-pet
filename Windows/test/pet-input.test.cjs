@@ -111,7 +111,7 @@ test("native accessibility double-click interval delays a single greet; drag can
 test("turning off reminder motion keeps original idle rig and requested meow alive", async () => {
   const r = renderer();
   r.run(
-    "ready=true;prefs={motion:false,systemCompanion:true};rigData={sizes:{idle:[466,463]},rigs:{idle:{width:546,height:543}}};motion={updates:0,meows:0,update(){this.updates++},meow(){this.meows++}};renderer={render(){return {}}};draw(16)",
+    "ready=true;prefs={motion:false,systemCompanion:true};rigData={sizes:{idle:[466,463]},rigs:{idle:{width:546,height:543}}};motion={updates:0,meows:0,petting:{value:0},update(){this.updates++},meow(){this.meows++}};renderer={render(){return {}}};draw(16)",
   );
   assert.equal(r.run("motion.updates"), 1);
   await r.run("requestAction('meow')");

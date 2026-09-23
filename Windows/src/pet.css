@@ -18,8 +18,9 @@ canvas {
 }
 button {
   position: absolute;
-  left: 340px;
-  top: 274px;
+  /* Starting point for the default cat; pet.js recomputes both on every state. */
+  left: 208px;
+  top: 280px;
   border: 1px solid #fff9;
   background: #665675de;
   color: white;
@@ -32,21 +33,37 @@ button {
 button:hover {
   background: #817099;
 }
+/* Hugs the text and sits just above the head, like the Mac layer. pet.js sets
+   font-size, padding, max-width, border-radius and bottom from the cat size. */
 #bubble {
   position: absolute;
-  left: 25px;
-  right: 25px;
-  top: 5px;
+  left: 50%;
+  bottom: 116px;
+  width: max-content;
+  max-width: 110px;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
   text-align: center;
-  padding: 8px 12px;
-  border-radius: 15px;
-  background: #faf6eff2;
-  color: #4c4540;
-  font: 12px/1.5 system-ui;
+  padding: 4px 9px;
+  border-radius: 12px;
+  background: rgba(255, 250, 242, 0.97);
+  color: #424242;
+  font: 500 12px/1.5 system-ui;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
   opacity: 0;
-  transition: opacity 0.25s;
+  transition: opacity 0.35s;
   pointer-events: none;
 }
 #bubble.visible {
   opacity: 1;
+  transition: opacity 0.15s;
+  animation: bubble-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes bubble-pop {
+  from {
+    transform: translateX(-50%) scale(0.5);
+  }
+  to {
+    transform: translateX(-50%) scale(1);
+  }
 }

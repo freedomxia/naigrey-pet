@@ -7,6 +7,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { createHash } = require("node:crypto");
 const { ClaudeSources } = require("./quota-claude.cjs");
+const ResetCopy = require("./reset-copy.cjs");
 const { bindReminderIdentity } = require("./reminder-center.cjs");
 const {
   readStore,
@@ -15,6 +16,13 @@ const {
   validIdentity,
 } = require("./quota-store.cjs");
 const PROVIDERS = ["codex", "claude"];
+// LimitWindow.local() in Source/AICompanion/CNBridge.swift: everything outside
+// the two headline windows is an extra, shown in settings rather than on the card.
+const MAIN_WINDOWS = {
+  codex: ["primary", "secondary"],
+  claude: ["session", "weekly_all"],
+};
+const isExtraWindow = (provider, id) => !MAIN_WINDOWS[provider]?.includes(id);
 const ENDPOINTS = Object.freeze({
   codex: "https://chatgpt.com/backend-api/wham/usage",
   claude: "https://api.anthropic.com/api/oauth/usage",
@@ -160,6 +168,13 @@ function parseClaude(value) {
   if (!windows.length) throw invalid();
   return windows;
 }
+/// The Mac appends the reset wording to every quota reminder, always in the
+/// absolute form regardless of the card's countdown preference.
+function resetSuffix(resetsAt, now) {
+  return resetsAt
+    ? ResetCopy.text(resetsAt, { now: now ? now() : Date.now() })
+    : "";
+}
 class ReminderTracker {
   #states = new Map();
   #weekly = new Map();
@@ -191,9 +206,8 @@ class ReminderTracker {
       if (old && exhausted && !latched)
         weeklyEvents.push({
           provider: snapshot.provider,
-          title:
-            (snapshot.provider === "codex" ? "Codex" : "Claude") + " 额度提醒",
-          body: weekly.label + "额度已用完。",
+          title: `${snapshot.provider === "codex" ? "Codex" : "Claude"} · ${weekly.label}`,
+          body: "额度已用完。" + resetSuffix(weekly.resetsAt, this.now),
           kind: "weekly-limit",
         });
       this.#weekly.set(snapshot.provider, {
@@ -221,18 +235,19 @@ class ReminderTracker {
         : old;
     const events = [],
       name = snapshot.provider === "codex" ? "Codex" : "Claude";
+    const suffix = resetSuffix(headline.resetsAt, this.now);
     const emit = (kind, body) =>
       events.push({
         provider: snapshot.provider,
-        title: `${name} 额度提醒`,
-        body,
+        title: `${name} · ${headline.label}`,
+        body: body + suffix,
         kind,
       });
     for (const threshold of [80, 100])
       if (threshold > state.level && threshold <= level)
         emit(
           `threshold-${threshold}`,
-          `${headline.label}已用 ${Math.round(p)}%。`,
+          threshold === 100 ? "额度已用完。" : `已用 ${Math.round(p)}% 额度。`,
         );
     if (old && !changed) {
       const rolled =
@@ -244,7 +259,7 @@ class ReminderTracker {
       const dropped =
         p < state.p && (state.p - p >= 20 || (state.peak >= 30 && p <= 10));
       if ((rolled || dropped) && state.peak >= 15) {
-        emit("reset", `${headline.label}额度已恢复。`);
+        emit("reset", "额度已重置。");
         state.peak = p;
         state.lastReset = headline.resetsAt;
       }
@@ -256,7 +271,7 @@ class ReminderTracker {
       )
         state.sessionExhausted = false;
       if (p >= 100 && !state.sessionExhausted) {
-        emit("session-limit", headline.label + "额度已用完。");
+        emit("session-limit", "额度已用完。");
         state.sessionExhausted = true;
       }
     }
@@ -387,6 +402,8 @@ class QuotaService extends EventEmitter {
     );
     this.#fetch = fetchImpl;
     this.#now = () => Number(now());
+    // Reset wording in reminder bodies must follow the injected clock too.
+    this.#tracker.now = this.#now;
     this.#claude = new ClaudeSources({
       home,
       env: this.#env,
@@ -423,13 +440,18 @@ class QuotaService extends EventEmitter {
       throw new TypeError("Unknown quota provider");
     return this.#states.get(provider);
   }
+  /// Providers with a read in flight, so the card can say 更新中… the way the
+  /// Mac panel does instead of silently showing the previous numbers.
+  refreshing() {
+    return PROVIDERS.filter((p) => this.#states.get(p)?.pending);
+  }
   snapshot() {
     return PROVIDERS.map((p) => {
       const state = this.#states.get(p);
-      return bindReminderIdentity(
-        structuredClone(state.value),
-        state.reminderIdentity,
-      );
+      const value = structuredClone(state.value);
+      // Derived, not stored, exactly as the Mac derives it on conversion.
+      for (const w of value.windows || []) w.isExtra = isExtraWindow(p, w.id);
+      return bindReminderIdentity(value, state.reminderIdentity);
     });
   }
   #rememberIdentity(state, fingerprint, successful = true) {

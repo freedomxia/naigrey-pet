@@ -51,6 +51,8 @@ rules.observe([], Date.now());
 senses.stop();
 ```
 
+主进程发给渲染进程的感知负载是 `senses.snapshot()` 再加上 `pointer`、`gazing`、`fixated`。`gazing` 对应 Mac `gazeFocus()` 返回非 nil（毛线球在玩、被抓住或还在滚），此时 `pointer` 指向球而不是鼠标；`fixated` 更窄，只有真在玩或球被抓住才为真，对应 Mac 同名字段。两者不可互相替代：撸猫判定必须排除 `gazing`，否则球划过头顶会被当成撸猫。
+
 `senses.snapshot()` 为 `{status, typing, music, typingRate, pace, keyAge, keyboardAvailable, audioAvailable}`，status 为 `stopped | starting | unsupported | unavailable | partial | ok`。`start/stop` 幂等，非 Windows 不启动进程。helper 输出有界，超过 5 秒没有采样会停用并清空活动；进程 RPC 最多同时 64 个，每个 2 秒超时。helper 在父进程关闭 stdin 时退出，不留下后台键盘监听。
 
 ## 会话读取边界

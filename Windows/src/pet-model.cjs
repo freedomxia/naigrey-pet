@@ -4,6 +4,15 @@
     WINDOW_HEIGHT = 320,
     CENTER_X = 260,
     GROUND = 307;
+  // PetLayout.sizes / PetLayout.defaultHeight in Source/Sprites.swift.
+  const CAT_SIZES = [
+    ["迷你", 72],
+    ["小巧", 100],
+    ["标准", 130],
+    ["大只", 170],
+  ];
+  const DEFAULT_CAT_HEIGHT = 100;
+  const catHeights = () => CAT_SIZES.map(([, h]) => h);
   const paths = {
     idle: ["idle"],
     wave: ["wave", "idle"],
@@ -109,6 +118,32 @@
   function sleepContinuation(requested) {
     return requested === "sleep" ? null : requested;
   }
+  /// How far the drawn cat reaches either side of CENTER_X at this size, taken
+  /// over every clip and rig pose the way PetLayout's `reach` is on the Mac.
+  function silhouetteHalfWidth(clips, rig, catHeight) {
+    let half = 0;
+    const cs = catHeight / clips.sitHeight;
+    for (const c of clips.clips)
+      for (const anchor of [c.start, c.end || c.start])
+        half = Math.max(half, anchor[0] * cs, (c.size[0] - anchor[0]) * cs);
+    const rs = catHeight / rig.sizes.idle[1];
+    for (const size of Object.values(rig.sizes))
+      half = Math.max(half, (size[0] / 2) * rs);
+    return half;
+  }
+  /// The window is a fixed box with the cat drawn centred, so its edges carry a
+  /// transparent margin. Only the silhouette has to stay on screen; clamping the
+  /// whole window makes a small cat turn around a margin's width early.
+  function catArea(area, half) {
+    const margin = Math.min(CENTER_X, WINDOW_WIDTH - CENTER_X) - half;
+    if (!(margin > 0)) return area;
+    return {
+      x: area.x - margin,
+      y: area.y,
+      width: area.width + margin * 2,
+      height: area.height,
+    };
+  }
   function advanceWalk(x, delta, width, area) {
     return Math.max(
       area.x,
@@ -166,8 +201,13 @@
     WINDOW_HEIGHT,
     CENTER_X,
     GROUND,
+    CAT_SIZES,
+    DEFAULT_CAT_HEIGHT,
+    catHeights,
     IdleCompanion,
     advanceWalk,
+    catArea,
+    silhouetteHalfWidth,
     sleepContinuation,
     actionPath,
     clampPosition,
