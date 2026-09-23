@@ -19,7 +19,7 @@ const {
   panelPosition,
   advanceWalk,
   catArea,
-  silhouetteHalfWidth,
+  roamInsets,
   CAT_SIZES,
   DEFAULT_CAT_HEIGHT,
   catHeights,
@@ -229,6 +229,9 @@ function pointerSenses() {
   return {
     ...senses?.snapshot(),
     pointer: { x: target.x - (b?.x || 0), y: target.y - (b?.y || 0) },
+    // The real cursor, never the ball: the renderer hit-tests with this to
+    // decide whether the window should swallow clicks.
+    cursor: { x: p.x - (b?.x || 0), y: p.y - (b?.y || 0) },
     gazing,
     fixated: !!(ball && (playState !== "off" || ball.held)),
   };
@@ -272,10 +275,7 @@ function windowFor(file, options) {
 /// Work area widened by the window's transparent side margin, so the drawn cat
 /// can reach the screen edge instead of stopping a margin short of it.
 function roamArea(area) {
-  return catArea(
-    area,
-    silhouetteHalfWidth(clipMetadata, rigMetadata, prefs.catHeight),
-  );
+  return catArea(area, roamInsets(clipMetadata, rigMetadata, prefs.catHeight));
 }
 function repositionPanel() {
   if (!pet || !panel) return;
@@ -550,11 +550,20 @@ async function checkUpdates(manual = false) {
     if (!manual && updateRelease?.version === release.version) return;
     updateRelease = release;
     tray?.setContextMenu(menu());
+    // The bubble is easy to miss, so the pending version also sits in the tray
+    // tooltip and the menu until it is installed.
+    tray?.setToolTip(`奶灰桌宠 · 有新版本 ${release.version}`);
     if (!manual) {
-      present(
-        "bubble",
-        `奶灰 Windows ${release.version} 可以更新啦，右键菜单可安装。`,
-      );
+      present("bubble", {
+        text: `有新衣服啦～ ${release.version}，菜单里点一下就换`,
+        seconds: 6,
+      });
+      if (prefs.notifications && Notification.isSupported())
+        new Notification({
+          title: `奶灰 Windows ${release.version}`,
+          body: "右键托盘图标，点「换上新衣服」即可更新。",
+          silent: !prefs.sound,
+        }).show();
       return;
     }
     const choice = await dialog.showMessageBox(pet, {

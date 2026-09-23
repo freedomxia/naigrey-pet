@@ -97,7 +97,7 @@ test("a dropped size migrates to the nearest kept one, not back to the default",
 test("walking reaches the screen edge instead of stopping a margin short", () => {
   const {
     catArea,
-    silhouetteHalfWidth,
+    roamInsets,
     advanceWalk,
     CAT_SIZES,
     WINDOW_WIDTH,
@@ -107,8 +107,9 @@ test("walking reaches the screen edge instead of stopping a margin short", () =>
     rig = require("../assets/rig/rig.json");
   const screen = { x: 0, y: 0, width: 1920, height: 1080 };
   for (const [name, height] of CAT_SIZES) {
-    const half = silhouetteHalfWidth(clips, rig, height),
-      area = catArea(screen, half);
+    const insets = roamInsets(clips, rig, height),
+      half = Math.min(CENTER_X, WINDOW_WIDTH - CENTER_X) - insets.left,
+      area = catArea(screen, insets);
     let x = 900;
     for (let i = 0; i < 4000; i++) x = advanceWalk(x, -1, WINDOW_WIDTH, area);
     assert.ok(
@@ -120,6 +121,32 @@ test("walking reaches the screen edge instead of stopping a margin short", () =>
       Math.abs(x + CENTER_X + half - (screen.x + screen.width)) < 1e-9,
       `${name} stops short of the right edge`,
     );
+  }
+});
+test("the cat can be put near the top of the screen, not just its lower band", () => {
+  const { catArea, roamInsets, clampPosition, CAT_SIZES, GROUND, WINDOW_HEIGHT } =
+    require("../src/pet-model.cjs");
+  const clips = require("../assets/clips/clips.json"),
+    rig = require("../assets/rig/rig.json");
+  const screen = { x: 0, y: 0, width: 1920, height: 1040 };
+  for (const [name, height] of CAT_SIZES) {
+    const insets = roamInsets(clips, rig, height);
+    const area = catArea(screen, insets);
+    // Drag as high as the clamp allows, then see where the head ends up.
+    const p = clampPosition(
+      { x: 500, y: -10000 },
+      { width: 520, height: WINDOW_HEIGHT },
+      area,
+    );
+    const head = p.y + GROUND - height;
+    const unreachable = head - screen.y;
+    // A fixed 320px window used to strand the cat 137–235px below the top.
+    assert.ok(
+      unreachable < GROUND - height,
+      `${name} gained no upward reach (${unreachable})`,
+    );
+    // Whatever is left above the head is the bubble's room, never more.
+    assert.ok(unreachable <= height + 40, `${name} still stranded at ${unreachable}`);
   }
 });
 test("all shipped action frames fit the transparent window at both transition anchors", () => {

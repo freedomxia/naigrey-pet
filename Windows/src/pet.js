@@ -23,7 +23,8 @@ let lastDraw = 0,
   lastPurr = -Infinity,
   ready = false;
 let prefs = { motion: true },
-  lastHit = true;
+  lastHit = true,
+  lastCursor = null;
 const {
   GROUND,
   WINDOW_HEIGHT,
@@ -31,6 +32,7 @@ const {
   CENTER_X,
   DEFAULT_CAT_HEIGHT,
   catHeights,
+  bubbleFontSize,
 } = window.PetModel;
 /// Widest silhouette in device pixels at the current size, or null before the
 /// rig metadata has loaded. Shared by the badge and the bubble so both stay
@@ -48,7 +50,7 @@ function bubble(value) {
   const seconds =
     Number.isFinite(value?.seconds) && value.seconds > 0 ? value.seconds : 2.5;
   const el = document.querySelector("#bubble"),
-    size = Math.min(13, Math.max(10, catHeight() * 0.1)),
+    size = bubbleFontSize(catHeight()),
     pad = size * 0.75,
     span = catSpan();
   el.style.fontSize = size + "px";
@@ -506,11 +508,12 @@ function draw(now) {
       requestAction(chosen, true);
   }
   lastDraw = now;
+  retestPointer();
   requestAnimationFrame(draw);
 }
-function hit(e) {
-  const x = Math.floor(e.clientX * 2),
-    y = Math.floor(e.clientY * 2);
+function hitAt(cssX, cssY) {
+  const x = Math.floor(cssX * 2),
+    y = Math.floor(cssY * 2);
   return (
     x >= 0 &&
     y >= 0 &&
@@ -518,6 +521,23 @@ function hit(e) {
     y < WINDOW_HEIGHT * 2 &&
     ctx.getImageData(x, y, 1, 1).data[3] > 35
   );
+}
+function hit(e) {
+  return hitAt(e.clientX, e.clientY);
+}
+/// Walking slides the window under a still cursor, and no pointermove fires —
+/// so a hit test left over from when the cat was under the pointer keeps the
+/// whole 520x320 box swallowing clicks long after the cat has left.
+function retestPointer() {
+  const c = externalSenses.cursor;
+  if (!c || pointer) return;
+  if (lastCursor && lastCursor.x === c.x && lastCursor.y === c.y) return;
+  lastCursor = { x: c.x, y: c.y };
+  const h = hitAt(c.x, c.y);
+  if (h !== lastHit) {
+    lastHit = h;
+    api.command("pointer", h);
+  }
 }
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || !hit(e)) return;
