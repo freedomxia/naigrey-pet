@@ -136,11 +136,15 @@ function acceptState(s) {
     )
       ? "AI⋯"
       : "AI";
-  const unread = s.reminders?.unreadCount;
-  document.querySelector("#ai").title = Number.isFinite(unread)
-    ? `AI 额度与任务 · ${unread} 条未读`
-    : "查看 Codex / Claude 额度";
-  layoutBadge();
+  // Sensor-only frames arrive ~30 times a second and carry neither field; they
+  // must not wipe what the full snapshot put there.
+  if (s.reminders)
+    document.querySelector("#ai").title = Number.isFinite(
+      s.reminders.unreadCount,
+    )
+      ? `AI 额度与任务 · ${s.reminders.unreadCount} 条未读`
+      : "查看 Codex / Claude 额度";
+  if (s.prefs) layoutBadge();
 }
 
 /// The Mac window is exactly cat-sized, so its badge sits at a fixed inset from
