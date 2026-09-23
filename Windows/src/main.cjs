@@ -18,6 +18,11 @@ const {
   clampPosition,
   panelPosition,
   advanceWalk,
+  catArea,
+  silhouetteHalfWidth,
+  CAT_SIZES,
+  DEFAULT_CAT_HEIGHT,
+  catHeights,
   WINDOW_WIDTH: W,
   WINDOW_HEIGHT: H,
   CENTER_X: CX,
@@ -31,6 +36,7 @@ const { ReminderCenter } = require("./reminder-center.cjs");
 const { YarnBall } = require("./pet-ball.cjs");
 const { Updater } = require("./updater.cjs");
 const clipMetadata = require("../assets/clips/clips.json");
+const rigMetadata = require("../assets/rig/rig.json");
 const playClip = clipMetadata.clips.find((c) => c.name === "play");
 const demo = process.argv.includes("--demo"),
   smoke = process.argv.includes("--smoke-test");
@@ -109,7 +115,7 @@ let prefs = {
   notifications: false,
   sound: false,
   quiet: false,
-  countdown: true,
+  countdown: false,
   motion: true,
   autonomous: true,
   startup: false,
@@ -120,7 +126,7 @@ let prefs = {
   notifyWaiting: true,
   notifyEnded: true,
   notifyReset: true,
-  catHeight: 140,
+  catHeight: DEFAULT_CAT_HEIGHT,
   systemCompanion: true,
   mutedProviders: [],
   quietStart: 1320,
@@ -144,8 +150,7 @@ function load() {
     prefs.mutedProviders = Array.isArray(v.mutedProviders)
       ? v.mutedProviders.filter((p) => ["codex", "claude"].includes(p))
       : [];
-    if ([72, 100, 130, 140, 170].includes(v.catHeight))
-      prefs.catHeight = v.catHeight;
+    if (catHeights().includes(v.catHeight)) prefs.catHeight = v.catHeight;
     if (Number.isFinite(v.position?.x) && Number.isFinite(v.position?.y))
       prefs.position = v.position;
     for (const key of ["mutedUntil", "quietOverrideUntil"])
@@ -206,17 +211,25 @@ function reminderPrefs() {
 function pointerSenses() {
   const b = pet?.getBounds(),
     p = screen.getCursorScreenPoint();
-  const focus = ball && (playState !== "off" || ball.held || !ball.isResting);
-  const target = focus ? { x: ball.x, y: ball.y } : p;
+  // gazeFocus() in Source/main.swift: the eyes follow the ball whenever it is
+  // live, but only an active game counts as fixated. Two different facts — the
+  // renderer needs both, and must not read one for the other.
+  const gazing = !!(
+    ball &&
+    (playState !== "off" || ball.held || !ball.isResting)
+  );
+  const target = gazing ? { x: ball.x, y: ball.y } : p;
   return {
     ...senses?.snapshot(),
     pointer: { x: target.x - (b?.x || 0), y: target.y - (b?.y || 0) },
-    fixated: !!focus,
+    gazing,
+    fixated: !!(ball && (playState !== "off" || ball.held)),
   };
 }
 function snapshot() {
   return {
     usage: demo ? demoData() : service?.snapshot() || [],
+    refreshing: demo ? [] : service?.refreshing() || [],
     prefs,
     demo,
     smoke,
@@ -248,6 +261,14 @@ function windowFor(file, options) {
   w.webContents.on("will-navigate", (e) => e.preventDefault());
   w.loadFile(path.join(__dirname, file));
   return w;
+}
+/// Work area widened by the window's transparent side margin, so the drawn cat
+/// can reach the screen edge instead of stopping a margin short of it.
+function roamArea(area) {
+  return catArea(
+    area,
+    silhouetteHalfWidth(clipMetadata, rigMetadata, prefs.catHeight),
+  );
 }
 function repositionPanel() {
   if (!pet || !panel) return;
@@ -313,14 +334,42 @@ function userAction(action) {
     toggleBall();
     return;
   }
+  const line = userLine(action, ["sleep", "lieDown"].includes(phase));
+  // Asking for a walk turns roaming back on, the way 现在散步 does on the Mac.
+  if (action === "walk" && !prefs.roaming) setPreference("roaming", true, true);
   act(action, { manual: true });
+  if (line) present("bubble", { text: line });
 }
 function applyCompanion(result) {
   company = result.company;
   typeRate = result.typeRate;
   if (result.action && !["type", "music"].includes(result.action))
     act(result.action, { duration: result.duration });
-  if (result.bubble) present("bubble", result.bubble);
+  if (result.bubble)
+    present("bubble", { text: result.bubble, seconds: result.bubbleSeconds });
+}
+// The lines the Mac says when you pick something from the menu. Without them a
+// menu action is silent on Windows while the Mac cat answers every time.
+const GREETINGS = ["喵～ ♡", "摸摸头，好开心", "我陪着你呢", "休息一下吧～"];
+async function refreshQuota() {
+  if (demo || Date.now() - lastRefresh < 15000) return;
+  lastRefresh = Date.now();
+  await service.refresh();
+  return snapshot();
+}
+// previewReminder() in Source/AICompanion/CompanionService.swift.
+function previewReminder() {
+  present("bubble", { text: "剩余 20%，58 分钟后重置。", seconds: 6 });
+}
+function userLine(action, asleep) {
+  if (action === "wave")
+    return asleep
+      ? "睡醒啦～"
+      : GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+  if (action === "sleep") return "呼噜… z Z";
+  if (action === "idle") return asleep ? "睡醒啦～" : null;
+  if (action === "walk") return "一起走走～";
+  return null;
 }
 function stopPlaying(close = false) {
   playState = "off";
@@ -480,6 +529,7 @@ function stepBall() {
 async function checkUpdates(manual = false) {
   if (smoke || demo || updating) return;
   updating = true;
+  tray?.setContextMenu(menu());
   try {
     const release = await updater.check({ force: manual });
     if (!release) {
@@ -523,24 +573,27 @@ async function checkUpdates(manual = false) {
       });
   } finally {
     updating = false;
+    tray?.setContextMenu(menu());
   }
 }
 function menu() {
   return Menu.buildFromTemplate([
     { label: "奶灰 · 你的桌面小伙伴", enabled: false },
-    { label: "查看 AI 额度", click: showPanel },
+    { label: "AI 额度与任务…", click: showPanel },
+    { label: "刷新 AI 额度", click: () => void refreshQuota() },
     { type: "separator" },
     ...Object.entries({
-      wave: "招招手",
-      play: ball ? "收起毛线球" : "玩毛线球",
-      type: "敲键盘",
-      stretch: "伸懒腰",
-      yawn: "打哈欠",
-      walk: "走一走",
-      music: "听音乐",
-      sleep: "睡觉",
-      idle: "叫醒",
+      wave: "摸摸 / 打招呼",
+      walk: "现在散步",
+      stretch: "伸个懒腰",
+      yawn: "打个哈欠",
+      play: ball ? "收起毛线球" : "丢个毛线球",
     }).map(([a, label]) => ({ label, click: () => userAction(a) })),
+    {
+      label: ["sleep", "lieDown"].includes(phase) ? "叫醒奶灰" : "让奶灰睡觉",
+      click: () =>
+        userAction(["sleep", "lieDown"].includes(phase) ? "idle" : "sleep"),
+    },
     { type: "separator" },
     ...Object.entries({
       roaming: "自由走动",
@@ -554,8 +607,8 @@ function menu() {
     })),
     {
       label: "猫咪大小",
-      submenu: [72, 100, 130, 140, 170].map((size) => ({
-        label: `${size} px`,
+      submenu: CAT_SIZES.map(([name, size]) => ({
+        label: name,
         type: "radio",
         checked: prefs.catHeight === size,
         click: () => setPreference("catHeight", size),
@@ -576,22 +629,31 @@ function menu() {
     },
     { label: "设置", click: showSettings },
     {
-      label: "回到屏幕中央",
+      label: "把奶灰叫回来",
       click: () => {
         const a = screen.getPrimaryDisplay().workArea;
+        // Back on the ground in the middle of the screen, then a hello — a cat
+        // parked in mid-air is not where the Mac leaves it.
         pet.setPosition(
           Math.round(a.x + a.width / 2 - W / 2),
-          Math.round(a.y + a.height / 2 - H / 2),
+          Math.round(a.y + a.height - H),
         );
         walkX = pet.getBounds().x;
+        pet.showInactive();
+        userAction("wave");
       },
     },
-    {
-      label: updateRelease
-        ? `安装 Windows ${updateRelease.version}`
-        : "检查更新",
-      click: () => checkUpdates(true),
-    },
+    updating
+      ? {
+          label: updateRelease ? "正在更新…" : "正在检查更新…",
+          enabled: false,
+        }
+      : {
+          label: updateRelease
+            ? `换上新衣服 · ${updateRelease.version}`
+            : "检查更新…",
+          click: () => checkUpdates(true),
+        },
     {
       label: "下载与版本",
       click: () =>
@@ -600,6 +662,10 @@ function menu() {
         ),
     },
     { type: "separator" },
+    {
+      label: "单击招手 · 双击睡觉 · 拖动搬家 · 头上划一划是撸猫",
+      enabled: false,
+    },
     { label: "退出奶灰", click: () => app.quit() },
   ]);
 }
@@ -612,12 +678,33 @@ function trusted(e) {
       e.senderFrame === w.webContents.mainFrame,
   );
 }
-function setPreference(key, value) {
-  if (booleanPrefs.includes(key) && typeof value === "boolean")
+// The three companionship switches answer out loud on the Mac. `silent` is for
+// the callers that already say something of their own.
+const TOGGLE_LINES = {
+  roaming: ["去散个步～", "乖乖待在这里", 2.5],
+  company: ["你忙你的，我陪着～", "好，我自己玩", 2],
+  routine: ["我会跟着你的作息来～", "好的，我自己玩", 2],
+};
+function setPreference(key, value, silent = false) {
+  if (booleanPrefs.includes(key) && typeof value === "boolean") {
+    const line = TOGGLE_LINES[key];
+    if (line && !silent && prefs[key] !== value)
+      present("bubble", { text: value ? line[0] : line[1], seconds: line[2] });
     prefs[key] = value;
-  else if (key === "catHeight" && [72, 100, 130, 140, 170].includes(value)) {
+  } else if (key === "catHeight" && catHeights().includes(value)) {
     prefs[key] = value;
     stopPlaying(true);
+    // A bigger cat may not fit where the smaller one was standing.
+    if (pet && !pet.isDestroyed()) {
+      const b = pet.getBounds();
+      const p = clampPosition(
+        b,
+        b,
+        roamArea(screen.getDisplayMatching(b).workArea),
+      );
+      pet.setPosition(p.x, p.y);
+      walkX = p.x;
+    }
   } else if (
     ["mutedUntil", "quietOverrideUntil"].includes(key) &&
     Number.isFinite(value) &&
@@ -730,6 +817,8 @@ if (primary)
     });
     updater = new Updater({
       currentVersion: app.getVersion(),
+      // Windows ships through the preview channel; its releases are marked
+      // prerelease on GitHub, so refusing them would stop update prompts.
       allowPrerelease: true,
       directory: path.join(app.getPath("userData"), "updates"),
     });
@@ -752,8 +841,11 @@ if (primary)
         y: area.y + area.height - H - 160,
       },
       { width: W, height: H },
-      screen.getDisplayNearestPoint(prefs.position || { x: area.x, y: area.y })
-        .workArea,
+      roamArea(
+        screen.getDisplayNearestPoint(
+          prefs.position || { x: area.x, y: area.y },
+        ).workArea,
+      ),
     );
     pet = windowFor("pet.html", {
       ...position,
@@ -804,7 +896,7 @@ if (primary)
     });
     screen.on("display-removed", () => {
       const b = pet.getBounds(),
-        a = screen.getPrimaryDisplay().workArea,
+        a = roamArea(screen.getPrimaryDisplay().workArea),
         p = clampPosition(b, b, a);
       pet.setPosition(p.x, p.y);
       walkX = p.x;
@@ -878,10 +970,10 @@ if (primary)
         userAction(value);
         return;
       }
-      if (name === "refresh" && !demo && Date.now() - lastRefresh >= 15000) {
-        lastRefresh = Date.now();
-        await service.refresh();
-        return snapshot();
+      if (name === "refresh") return await refreshQuota();
+      if (name === "preview") {
+        previewReminder();
+        return;
       }
       if (name === "connect" && ["codex", "claude"].includes(value) && !demo) {
         if (!prefs.providers.includes(value)) prefs.providers.push(value);
@@ -958,7 +1050,7 @@ if (primary)
         Math.abs(value) <= 8
       ) {
         const b = pet.getBounds(),
-          a = screen.getDisplayMatching(b).workArea;
+          a = roamArea(screen.getDisplayMatching(b).workArea);
         const proposed = (walkX ?? b.x) + value;
         walkX = advanceWalk(walkX ?? b.x, value, b.width, a);
         if (
@@ -995,7 +1087,7 @@ if (primary)
               y: drag.bounds.y + c.y - drag.cursor.y,
             },
             drag.bounds,
-            screen.getDisplayNearestPoint(c).workArea,
+            roamArea(screen.getDisplayNearestPoint(c).workArea),
           );
         pet.setPosition(p.x, p.y);
         return;

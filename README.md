@@ -10,7 +10,7 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-555555?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-555555?style=flat-square)
 
-[**Windows 安装程序（.exe）**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.0/naigrey-windows-0.2.0-x64-setup.exe) · [**macOS 下载（.zip）**](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
+[**Windows 安装程序（.exe）**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.1/naigrey-windows-0.2.1-x64-setup.exe) · [**macOS 下载（.zip）**](https://github.com/freedomxia/naigrey-pet/releases/download/v3.4.0/naigrey-mac.zip) · [使用说明](使用说明.md) · [版本记录](https://github.com/freedomxia/naigrey-pet/releases)
 
 <img src="docs/images/cat-poses.png" alt="奶灰小猫的六种形象：坐着、眯眼、招手、睡觉、打哈欠和走路" width="760">
 
@@ -63,7 +63,7 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 
 ### Windows 10 / 11（64 位）
 
-1. [**下载 Windows 安装程序：naigrey-windows-0.2.0-x64-setup.exe**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.0/naigrey-windows-0.2.0-x64-setup.exe)。
+1. [**下载 Windows 安装程序：naigrey-windows-0.2.1-x64-setup.exe**](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.1/naigrey-windows-0.2.1-x64-setup.exe)。
 2. 如果旧版正在运行，先从托盘退出奶灰。
 3. 双击下载的 **`.exe`** 文件，按安装向导完成安装，再打开桌面快捷方式。
 
@@ -84,7 +84,7 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 <details>
 <summary>更新校验与备份机制</summary>
 
-更新源是这个仓库里的 [`updates/latest.json`](updates/latest.json)，安装包发在 Releases 里。因为 App 没有做公证，Gatekeeper 不会替你把关，所以更新器自己做了这件事：
+**macOS。** 更新源是这个仓库里的 [`updates/latest.json`](updates/latest.json)，安装包发在 Releases 里。因为 App 没有做公证，Gatekeeper 不会替你把关，所以更新器自己做了这件事：
 
 - 每个安装包都用一把 Ed25519 私钥签名，公钥编译在 App 里，**签名对不上就直接丢掉**；
 - 另外比对 SHA-256，用来发现下载不完整；
@@ -93,6 +93,8 @@ Claude 按同组织 Desktop 缓存 → CLI `/usage` → OAuth 顺序读取。没
 - 换上去之前，旧版本会留一份在 `~/Library/Application Support/奶灰/backup/`。
 
 私钥只存在发布者本机（`~/.naigrey/release-key`），不在仓库里。
+
+**Windows.** 用同一把发布密钥，按 Windows 安装包自己的 SemVer 判断新旧，与 Mac 版本号无关。签名覆盖发布里的 `SHA256SUMS.txt`（安装包上限 512 MiB，没法整包读进内存验签），验签通过后才采信清单里的 SHA-256 去校验安装包——哈希只有这一个来源，所以效果等同于对安装包签名。缺少签名的发布不会被当作更新。Windows 仍在预览渠道，标记为 prerelease 的发布照常提示更新。细节见 [Windows 更新下载器](Windows/docs/updater.md)。
 
 </details>
 

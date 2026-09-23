@@ -57,6 +57,15 @@ h2 button {
   font-size: 10px;
   font-weight: 400;
 }
+h2 .state {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: #8a8178;
+}
+h2 .state.stale-state {
+  color: #a8a099;
+}
 section {
   margin-bottom: 8px;
 }
@@ -72,6 +81,12 @@ section {
 }
 .value.low {
   color: #b17934;
+}
+.value.critical {
+  color: #a3524a;
+}
+.value.unknown {
+  color: #9a928a;
 }
 progress {
   display: block;
@@ -89,6 +104,24 @@ progress::-webkit-progress-bar {
 progress::-webkit-progress-value {
   background: #88a185;
   border-radius: 5px;
+}
+progress.low {
+  accent-color: #c99a63;
+}
+progress.low::-webkit-progress-value {
+  background: #c99a63;
+}
+progress.critical {
+  accent-color: #c0736a;
+}
+progress.critical::-webkit-progress-value {
+  background: #c0736a;
+}
+progress.unknown {
+  accent-color: #c4bdb6;
+}
+progress.unknown::-webkit-progress-value {
+  background: #c4bdb6;
 }
 .reset {
   font-size: 10px;
@@ -130,11 +163,23 @@ main {
   flex: 1;
   min-height: 0;
 }
-.stale .value {
+.stale .value,
+.stale .value.low,
+.stale .value.critical,
+.stale .value.unknown {
   color: #9a928a;
 }
-.stale progress::-webkit-progress-value {
+.stale progress::-webkit-progress-value,
+.stale progress.low::-webkit-progress-value,
+.stale progress.critical::-webkit-progress-value,
+.stale progress.unknown::-webkit-progress-value {
   background: #b9b2ac;
+}
+.stale progress,
+.stale progress.low,
+.stale progress.critical,
+.stale progress.unknown {
+  accent-color: #b9b2ac;
 }
 #sessions {
   font-size: 10px;

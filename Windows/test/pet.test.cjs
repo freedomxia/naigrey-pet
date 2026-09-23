@@ -78,6 +78,34 @@ test("high-refresh walking preserves subpixel distance until window positioning"
   assert.ok(Math.abs(x - 404) < 0.001);
   assert.equal(advanceWalk(1, -4, 360, { x: 0, width: 1920 }), 0);
 });
+test("walking reaches the screen edge instead of stopping a margin short", () => {
+  const {
+    catArea,
+    silhouetteHalfWidth,
+    advanceWalk,
+    CAT_SIZES,
+    WINDOW_WIDTH,
+    CENTER_X,
+  } = require("../src/pet-model.cjs");
+  const clips = require("../assets/clips/clips.json"),
+    rig = require("../assets/rig/rig.json");
+  const screen = { x: 0, y: 0, width: 1920, height: 1080 };
+  for (const [name, height] of CAT_SIZES) {
+    const half = silhouetteHalfWidth(clips, rig, height),
+      area = catArea(screen, half);
+    let x = 900;
+    for (let i = 0; i < 4000; i++) x = advanceWalk(x, -1, WINDOW_WIDTH, area);
+    assert.ok(
+      Math.abs(x + CENTER_X - half - screen.x) < 1e-9,
+      `${name} stops short of the left edge`,
+    );
+    for (let i = 0; i < 8000; i++) x = advanceWalk(x, 1, WINDOW_WIDTH, area);
+    assert.ok(
+      Math.abs(x + CENTER_X + half - (screen.x + screen.width)) < 1e-9,
+      `${name} stops short of the right edge`,
+    );
+  }
+});
 test("all shipped action frames fit the transparent window at both transition anchors", () => {
   const { clips, sitHeight } = require("../assets/clips/clips.json");
   for (const c of clips)
@@ -222,4 +250,21 @@ test("all decoded visible action pixels fit both orientations at every supported
         }
       }
 });
-test('decoded alpha-bound fixture belongs to the exact shipped video bytes',()=>{const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');for(const [name,evidence]of Object.entries(require('./fixtures/clip-alpha-bounds.json').clips)){const bytes=fs.readFileSync(path.join(__dirname,'../assets/clips',name+'.webm'));assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),evidence.sha256,`${name}: regenerate alpha bounds after replacing media`);assert.ok(evidence.frames>1);}});
+test("decoded alpha-bound fixture belongs to the exact shipped video bytes", () => {
+  const fs = require("node:fs"),
+    path = require("node:path"),
+    crypto = require("node:crypto");
+  for (const [name, evidence] of Object.entries(
+    require("./fixtures/clip-alpha-bounds.json").clips,
+  )) {
+    const bytes = fs.readFileSync(
+      path.join(__dirname, "../assets/clips", name + ".webm"),
+    );
+    assert.equal(
+      crypto.createHash("sha256").update(bytes).digest("hex"),
+      evidence.sha256,
+      `${name}: regenerate alpha bounds after replacing media`,
+    );
+    assert.ok(evidence.frames > 1);
+  }
+});

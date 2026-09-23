@@ -14,19 +14,14 @@
     <p id="notice">额度卡片收起后，仍会刷新已连接的账号。</p>
     <div class="toolbar">
       <button id="refresh">刷新额度</button
-      ><button id="mute">暂停提醒 1 小时</button
-      ><button id="unmute">恢复提醒 1 小时</button>
+      ><button id="preview">预览气泡</button
+      ><button id="mute">暂停提醒 1 小时</button>
     </div>
-    <label
-      >猫咪大小<select id="size">
-        <option>72</option>
-        <option>100</option>
-        <option>130</option>
-        <option>140</option>
-        <option>170</option>
-      </select></label
-    >
+    <label>猫咪大小<select id="size"></select></label>
     <div id="options"></div>
+    <p class="note">
+      Codenotch 规则 · 主额度已用 80% / 100% 提醒，周额度耗尽提醒
+    </p>
     <p class="note">
       开启 Claude CLI 续期后，奶灰可启动本机 Claude Code；Claude
       自身可能更新登录凭证。奶灰不会读取或保存按键内容、录制声音。
@@ -42,6 +37,7 @@
       仅在连接后读取对应账号与任务状态。Claude 支持本机 Desktop 缓存、授权 CLI
       及 OAuth 文件。不会自动使用重置券。
     </p>
+    <script src="pet-model.cjs"></script>
     <script src="reset-copy.cjs"></script>
     <script src="settings.js"></script>
   </body>
