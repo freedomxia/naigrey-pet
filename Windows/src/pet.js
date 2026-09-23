@@ -20,16 +20,53 @@ let lastDraw = 0,
   pointer = null,
   clickTimer,
   bubbleTimer,
+  lastPurr = -Infinity,
   ready = false;
 let prefs = { motion: true },
   lastHit = true;
-const { GROUND, WINDOW_HEIGHT, WINDOW_WIDTH, CENTER_X } = window.PetModel;
-function bubble(text) {
-  const el = document.querySelector("#bubble");
+const {
+  GROUND,
+  WINDOW_HEIGHT,
+  WINDOW_WIDTH,
+  CENTER_X,
+  DEFAULT_CAT_HEIGHT,
+  catHeights,
+} = window.PetModel;
+/// Widest silhouette in device pixels at the current size, or null before the
+/// rig metadata has loaded. Shared by the badge and the bubble so both stay
+/// pinned to the cat rather than to the fixed window.
+function catSpan() {
+  if (!rigData) return null;
+  const scale = catHeight() / rigData.sizes.idle[1];
+  return Math.max(...Object.values(rigData.sizes).map((v) => v[0])) * scale;
+}
+function bubble(value) {
+  const text = typeof value === "string" ? value : value?.text;
+  if (!text) return;
+  // The Mac says things for as long as the line deserves; anything without an
+  // explicit duration gets its 2.5s default.
+  const seconds =
+    Number.isFinite(value?.seconds) && value.seconds > 0 ? value.seconds : 2.5;
+  const el = document.querySelector("#bubble"),
+    size = Math.min(13, Math.max(10, catHeight() * 0.1)),
+    pad = size * 0.75,
+    span = catSpan();
+  el.style.fontSize = size + "px";
+  el.style.padding = `${(pad * 0.35).toFixed(2)}px ${pad.toFixed(2)}px`;
+  el.style.maxWidth =
+    Math.round(Math.max(span === null ? 0 : span + 8, size * 11) - 12) + "px";
+  // The sprite's feet sit on GROUND, so its head is exactly catHeight above it.
+  el.style.bottom = catHeight() + 16 + "px";
   el.textContent = text;
+  el.classList.remove("visible");
+  void el.offsetWidth;
+  el.style.borderRadius = Math.min(14, el.offsetHeight / 2) + "px";
   el.classList.add("visible");
   clearTimeout(bubbleTimer);
-  bubbleTimer = setTimeout(() => el.classList.remove("visible"), 4500);
+  bubbleTimer = setTimeout(
+    () => el.classList.remove("visible"),
+    seconds * 1000,
+  );
 }
 let motion,
   renderer,
@@ -49,9 +86,9 @@ let company = null,
 let cancelPlayback = null,
   actionGeneration = 0;
 function catHeight() {
-  return [72, 100, 130, 140, 170].includes(prefs.catHeight)
+  return catHeights().includes(prefs.catHeight)
     ? prefs.catHeight
-    : 140;
+    : DEFAULT_CAT_HEIGHT;
 }
 function doubleClickInterval() {
   const ms = externalSenses.doubleClickInterval;
@@ -99,6 +136,22 @@ function acceptState(s) {
     )
       ? "AI⋯"
       : "AI";
+  const unread = s.reminders?.unreadCount;
+  document.querySelector("#ai").title = Number.isFinite(unread)
+    ? `AI 额度与任务 · ${unread} 条未读`
+    : "查看 Codex / Claude 额度";
+  layoutBadge();
+}
+
+/// The Mac window is exactly cat-sized, so its badge sits at a fixed inset from
+/// the corner. This window is a fixed 520x320, so the same corner has to be
+/// derived from the drawn silhouette or the badge drifts as the cat resizes.
+function layoutBadge() {
+  const span = catSpan();
+  if (span === null) return;
+  const badge = document.querySelector("#ai");
+  badge.style.left = Math.round(CENTER_X - span / 2 + 8) + "px";
+  badge.style.top = GROUND - 27 + "px";
 }
 function cancelAction() {
   actionGeneration++;
@@ -335,8 +388,11 @@ function draw(now) {
       {
         pointer: sensed,
         pointerSpeed,
+        // While the eyes are on the ball the pointer reading IS the ball, so
+        // without this guard a ball flung past the head reads as petting.
         pointerOverHead:
-          sensed &&
+          !externalSenses.gazing &&
+          !!sensed &&
           sensed.x > 135 &&
           sensed.x < 520 &&
           sensed.y > 10 &&
@@ -345,6 +401,12 @@ function draw(now) {
         fixated: !!externalSenses.fixated,
       },
     );
+    // Being stroked for a while is worth purring about, but not every frame.
+    // This branch only runs with no clip playing, so pose is idle and act nil.
+    if (motion.petting.value > 0.8 && now - lastPurr > 7000) {
+      lastPurr = now;
+      bubble({ text: "呼噜呼噜…", seconds: 2 });
+    }
     ctx.save();
     // Mac carried pose and soft landing, applied around the paw line.
     if (pointer?.moved) {
@@ -528,6 +590,7 @@ async function boot() {
   metadata = await (await fetch("../assets/clips/clips.json")).json();
   for (const c of metadata.clips) clips.set(c.name, c);
   rigData = await (await fetch("../assets/rig/rig.json")).json();
+  layoutBadge();
   motion = new window.PetMotion.CatMotion(rigData);
   renderer = new window.PetRenderer.RigRenderer(rigData);
   await renderer.load();

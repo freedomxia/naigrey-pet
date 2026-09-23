@@ -3,9 +3,27 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises"),
   os = require("node:os"),
   path = require("node:path");
-const { createHash } = require("node:crypto");
+const {
+  createHash,
+  generateKeyPairSync,
+  sign: signBytes,
+} = require("node:crypto");
 const { Updater, compareVersions, pickRelease } = require("../src/updater.cjs");
 const repo = "https://github.com/freedomxia/naigrey-pet";
+// A throwaway release key: the tests must never depend on the real private half.
+const keyPair = generateKeyPairSync("ed25519");
+const testPublicKey = keyPair.publicKey
+  .export({ format: "der", type: "spki" })
+  .subarray(12)
+  .toString("base64");
+const sign = (body) =>
+  signBytes(null, Buffer.from(body), keyPair.privateKey).toString("base64");
+/// Serves a signed manifest, then whatever the installer body should be.
+const serve = (body, respond) => async (url, options) => {
+  if (url.endsWith("SHA256SUMS.txt.sig")) return new Response(sign(body));
+  if (url.endsWith("SHA256SUMS.txt")) return new Response(body);
+  return respond(url, options);
+};
 const asset = (name, tag = "windows-v0.3.0", size = 4) => ({
   name,
   size,
@@ -21,6 +39,7 @@ const release = (version = "0.3.0", extra = {}) => ({
   assets: [
     asset(`naigrey-windows-${version}-x64-setup.exe`, "windows-v" + version),
     asset("SHA256SUMS.txt", "windows-v" + version, 100),
+    asset("SHA256SUMS.txt.sig", "windows-v" + version, 88),
   ],
   ...extra,
 });
@@ -32,6 +51,7 @@ async function fixture(t, fetchImpl, options = {}) {
     currentVersion: "0.2.0",
     directory,
     fetchImpl,
+    publicKey: testPublicKey,
     ...options,
   });
   t.after(() => u.cleanup());
@@ -46,6 +66,7 @@ test("Windows asset SemVer is independent of Mac release tag and rejects wrong a
     assets: [
       asset("naigrey-windows-0.1.0-x64-setup.exe", "v9.0.0"),
       asset("SHA256SUMS.txt", "v9.0.0"),
+      asset("SHA256SUMS.txt.sig", "v9.0.0"),
     ],
   });
   assert.equal(pickRelease([mac], { currentVersion: "0.2.0" }), null);
@@ -106,12 +127,10 @@ test("checks run daily, force bypasses local schedule, and Mac-only feed produce
 test("installer is streamed, hash validated and no process is executed", async (t) => {
   const { u, directory } = await fixture(
     t,
-    async (url) =>
-      new Response(
-        url.endsWith("SHA256SUMS.txt")
-          ? `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`
-          : "MZok",
-      ),
+    serve(
+      `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`,
+      async () => new Response("MZok"),
+    ),
   );
   const info = pickRelease([release()], { currentVersion: "0.2.0" });
   const file = await u.download(info);
@@ -124,12 +143,10 @@ test("installer is streamed, hash validated and no process is executed", async (
 test("hash mismatch and ambiguous manifest remove partial downloads", async (t) => {
   const { u, directory } = await fixture(
     t,
-    async (url) =>
-      new Response(
-        url.endsWith("SHA256SUMS.txt")
-          ? `${"0".repeat(64)}  naigrey-windows-0.3.0-x64-setup.exe\n`
-          : "MZok",
-      ),
+    serve(
+      `${"0".repeat(64)}  naigrey-windows-0.3.0-x64-setup.exe\n`,
+      async () => new Response("MZok"),
+    ),
   );
   await assert.rejects(
     u.download(pickRelease([release()], { currentVersion: "0.2.0" })),
@@ -179,8 +196,9 @@ test("vetted release-assets redirect and multiple chunks produce the exact insta
     assert.equal(options.redirect, "manual");
     assert.equal(options.credentials, "omit");
     assert.equal(options.headers.Authorization, undefined);
-    if (url.endsWith("SHA256SUMS.txt"))
-      return new Response(`${digest} *naigrey-windows-0.3.0-x64-setup.exe\r\n`);
+    const manifest = `${digest} *naigrey-windows-0.3.0-x64-setup.exe\r\n`;
+    if (url.endsWith("SHA256SUMS.txt.sig")) return new Response(sign(manifest));
+    if (url.endsWith("SHA256SUMS.txt")) return new Response(manifest);
     if (url.startsWith(repo))
       return new Response(null, {
         status: 302,
@@ -208,24 +226,50 @@ test("vetted release-assets redirect and multiple chunks produce the exact insta
   );
 });
 test("duplicate checksum records and oversized manifest are rejected before the executable request", async (t) => {
-  for (const response of [
-    () =>
-      new Response(
-        `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`,
-      ),
-    () => new Response("x", { headers: { "content-length": "65537" } }),
+  const duplicate = `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`;
+  for (const [body, manifest] of [
+    [duplicate, () => new Response(duplicate)],
+    ["x", () => new Response("x", { headers: { "content-length": "65537" } })],
   ]) {
-    let calls = 0;
-    const { u, directory } = await fixture(t, async () => {
-      calls++;
-      return response();
+    let installerRequests = 0;
+    const { u, directory } = await fixture(t, async (url) => {
+      if (url.endsWith("SHA256SUMS.txt.sig")) return new Response(sign(body));
+      if (url.endsWith("SHA256SUMS.txt")) return manifest();
+      installerRequests++;
+      return new Response("MZok");
     });
     await assert.rejects(
       u.download(pickRelease([release()], { currentVersion: "0.2.0" })),
     );
-    assert.equal(calls, 1);
+    assert.equal(installerRequests, 0);
     assert.deepEqual(await fs.readdir(directory), []);
   }
+});
+test("an installer whose manifest is not signed by the release key is refused", async (t) => {
+  const body = `${digest}  naigrey-windows-0.3.0-x64-setup.exe\n`;
+  let installerRequests = 0;
+  const { u, directory } = await fixture(t, async (url) => {
+    // A checksum the attacker also wrote proves nothing; the signature is what
+    // ties the manifest to the release key.
+    if (url.endsWith("SHA256SUMS.txt.sig"))
+      return new Response(sign("something else entirely"));
+    if (url.endsWith("SHA256SUMS.txt")) return new Response(body);
+    installerRequests++;
+    return new Response("MZok");
+  });
+  await assert.rejects(
+    u.download(pickRelease([release()], { currentVersion: "0.2.0" })),
+    /签名/,
+  );
+  assert.equal(installerRequests, 0);
+  assert.deepEqual(await fs.readdir(directory), []);
+});
+test("a release without a signed manifest is never offered", () => {
+  const unsigned = release();
+  unsigned.assets = unsigned.assets.filter(
+    (a) => a.name !== "SHA256SUMS.txt.sig",
+  );
+  assert.equal(pickRelease([unsigned], { currentVersion: "0.2.0" }), null);
 });
 test("cancel bounds fetch implementations that ignore AbortSignal", async (t) => {
   let entered;

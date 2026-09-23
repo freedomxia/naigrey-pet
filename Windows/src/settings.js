@@ -15,6 +15,16 @@ const fields = {
   startup: "开机启动",
   claudeRenewal: "允许调用 Claude CLI 查询并续期登录",
 };
+const PROVIDER_NAMES = { codex: "Codex", claude: "Claude" };
+const STATUS_NAMES = {
+  ok: "正常",
+  stale: "数据过期",
+  needsAuth: "需要登录",
+  accessDenied: "访问未授权",
+  unsupported: "暂不支持",
+  error: "更新失败",
+  disconnected: "已断开",
+};
 let state,
   signature = "";
 function el(tag, text) {
@@ -38,8 +48,14 @@ function button(text, fn) {
   b.onclick = fn;
   return b;
 }
+function muted() {
+  return Number(state?.prefs?.mutedUntil) > Date.now();
+}
 function render(s) {
   state = s;
+  document.querySelector("#mute").textContent = muted()
+    ? "恢复提醒 1 小时"
+    : "暂停提醒 1 小时";
   const next = JSON.stringify([
     s.prefs,
     s.usage,
@@ -70,7 +86,7 @@ function render(s) {
   root.replaceChildren();
   for (const p of ["codex", "claude"]) {
     const u = s.usage.find((u) => u.provider === p),
-      heading = el("h2", p === "codex" ? "Codex" : "Claude");
+      heading = el("h2", PROVIDER_NAMES[p]);
     const connected = s.prefs.providers.includes(p);
     heading.append(
       button(connected ? "断开" : "连接本机账号", () =>
@@ -86,23 +102,47 @@ function render(s) {
       ),
     );
     root.append(heading);
-    if (u) {
-      const age = Date.parse(u.sourceAt || u.observedAt);
+    if (!u) {
+      // A provider with no reading yet still has to say which of the two it is.
       root.append(
         el(
           "p",
-          `${u.source || "未连接"}${Number.isFinite(age) ? " · " + Math.max(0, Math.floor((Date.now() - age) / 60000)) + " 分钟前确认" : ""}`,
+          connected
+            ? "等待首次读取…"
+            : "尚未连接。仅连接后读取本机账号，登录失效时需回原应用登录。",
         ),
       );
-      if (u.message) root.append(el("p", u.message));
-      for (const w of u.windows || []) {
-        const row = el(
-          "p",
-          `${w.label} · ${w.unlimited ? "不限额" : Number.isFinite(w.usedPercent) ? "剩余 " + (100 - w.usedPercent > 0 && 100 - w.usedPercent < 1 ? "<1" : Math.round(Math.max(0, 100 - w.usedPercent))) + "%" : "未知"}${w.resetsAt ? "\n" + window.ResetCopy.text(w.resetsAt, { format: s.prefs.countdown ? "remaining" : "automatic" }) : ""}`,
-        );
-        root.append(row);
-      }
+      continue;
     }
+    const fresh = u.status === "ok";
+    if (!fresh)
+      root.append(
+        el(
+          "p",
+          `${STATUS_NAMES[u.status] || "状态未知"} · ${u.message || "以下为上次记录"}`,
+        ),
+      );
+    const age = Date.parse(u.sourceAt || u.observedAt);
+    if (Number.isFinite(age)) {
+      const mins = Math.max(0, Math.floor((Date.now() - age) / 60000));
+      // Old numbers are labelled as history, never as something just confirmed.
+      root.append(
+        el(
+          "p",
+          `${fresh ? "最近确认" : "历史记录"}：${mins === 0 ? "刚刚" : mins + " 分钟前"}${u.source ? " · " + u.source : ""}`,
+        ),
+      );
+    }
+    for (const w of u.windows || []) {
+      const row = el(
+        "p",
+        `${w.isExtra ? "其他 · " : ""}${w.label} · ${w.unlimited ? "不限额" : Number.isFinite(w.usedPercent) ? "剩余 " + (100 - w.usedPercent > 0 && 100 - w.usedPercent < 1 ? "<1" : Math.round(Math.max(0, 100 - w.usedPercent))) + "%" : "未知"}${w.resetsAt ? "\n" + window.ResetCopy.text(w.resetsAt, { format: s.prefs.countdown ? "remaining" : "automatic" }) : ""}`,
+      );
+      root.append(row);
+    }
+    if (fresh && u.message) root.append(el("p", u.message));
+    if (fresh && !u.windows?.length)
+      root.append(el("p", "账号暂未提供可识别的额度窗口。"));
   }
   root.append(el("h2", "任务"));
   const names = {
@@ -118,7 +158,7 @@ function render(s) {
     root.append(
       el(
         "p",
-        `${x.provider} · ${x.name} · ${names[x.state] || "状态未知"}${x.evidence === "explicit" ? "" : "（检测到活动）"}`,
+        `${PROVIDER_NAMES[x.provider] || x.provider} · ${x.name} · ${names[x.state] || "状态未知"}${x.evidence === "explicit" ? "" : "（检测到活动）"}`,
       ),
     );
   if (!s.sessions?.length)
@@ -147,6 +187,11 @@ for (const [key, title] of Object.entries(fields)) {
   label.append(input);
   document.querySelector("#options").append(label);
 }
+for (const [name, size] of window.PetModel.CAT_SIZES) {
+  const option = el("option", name);
+  option.value = size;
+  document.querySelector("#size").append(option);
+}
 document.querySelector("#size").onchange = (e) =>
   preference("catHeight", Number(e.target.value));
 document.querySelector("#quiet").onchange = (e) =>
@@ -156,12 +201,13 @@ for (const key of ["quietStart", "quietEnd"])
     const [h, m] = e.target.value.split(":").map(Number);
     if (Number.isInteger(h) && Number.isInteger(m)) preference(key, h * 60 + m);
   };
-document.querySelector("#mute").onclick = () =>
-  preference("mutedUntil", Date.now() + 3600000);
-document.querySelector("#unmute").onclick = async () => {
-  await preference("mutedUntil", 0);
-  await preference("quietOverrideUntil", Date.now() + 3600000);
+document.querySelector("#mute").onclick = async () => {
+  if (muted()) {
+    await preference("mutedUntil", 0);
+    await preference("quietOverrideUntil", Date.now() + 3600000);
+  } else await preference("mutedUntil", Date.now() + 3600000);
 };
+document.querySelector("#preview").onclick = () => command("preview");
 document.querySelector("#refresh").onclick = () => command("refresh");
 document.querySelector("#update").onclick = () => command("check-update");
 api.bootstrap().then(render);

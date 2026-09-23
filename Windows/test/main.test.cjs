@@ -186,9 +186,72 @@ test("renderer interaction informs manual sleep and clears company before action
   await h.command("interaction", "sleep");
   assert.equal(h.run("companion.sleeping"), true);
   assert.equal(h.run("companion.autoSlept"), false);
-  assert.equal(h.events.at(-2).message[0], "state");
-  assert.equal(h.events.at(-2).message[1].company, "none");
-  assert.deepEqual(h.events.at(-1).message, ["action", "sleep"]);
+  const messages = h.events.map((e) => e.message);
+  const action = messages.findIndex((m) => m[0] === "action");
+  assert.deepEqual(messages[action], ["action", "sleep"]);
+  assert.equal(messages[action - 1][0], "state");
+  assert.equal(messages[action - 1][1].company, "none");
+  // The Mac says 呼噜… z Z when you put it to sleep from the menu.
+  assert.deepEqual(messages.at(-1), ["bubble", { text: "呼噜… z Z" }]);
+});
+test("the tray menu matches the Mac's entries and reflects sleep and update state", async (t) => {
+  const h = await harness(t);
+  const labels = () => h.run("menu().items").map((i) => i.label);
+  const initial = labels();
+  assert.ok(initial.includes("让奶灰睡觉"));
+  assert.ok(!initial.includes("叫醒奶灰"));
+  // The Mac has no menu entry for typing or listening to music.
+  assert.ok(!initial.includes("敲键盘"));
+  assert.ok(!initial.includes("听音乐"));
+  assert.ok(initial.includes("刷新 AI 额度"));
+  assert.ok(initial.includes("把奶灰叫回来"));
+  assert.ok(
+    initial.includes("单击招手 · 双击睡觉 · 拖动搬家 · 头上划一划是撸猫"),
+  );
+  assert.deepEqual(
+    h
+      .run("menu().items")
+      .find((i) => i.label === "猫咪大小")
+      .submenu.map(({ label, checked }) => ({ label, checked })),
+    ["迷你", "小巧", "标准", "大只"].map((label) => ({
+      label,
+      checked: label === "小巧",
+    })),
+  );
+  await h.command("phase", "lieDown");
+  assert.ok(labels().includes("叫醒奶灰"));
+  h.run("updating=true");
+  assert.ok(labels().includes("正在检查更新…"));
+  assert.equal(
+    h.run("menu().items").find((i) => i.label === "正在检查更新…").enabled,
+    false,
+  );
+});
+test("preview shows a sample bubble without touching any account", async (t) => {
+  const h = await harness(t);
+  await h.command("preview");
+  assert.deepEqual(h.events.at(-1).message, [
+    "bubble",
+    { text: "剩余 20%，58 分钟后重置。", seconds: 6 },
+  ]);
+});
+test("a live ball is gazed at without counting as fixation or as petting", async (t) => {
+  const h = await harness(t);
+  // Still rolling with the game off: the eyes follow it, but this is neither a
+  // game in progress nor a hand on the cat's head.
+  h.run(
+    "ball={x:900,y:400,radius:12,held:false,isResting:false,snapshot:()=>({})};playState='off'",
+  );
+  const rolling = h.run("pointerSenses()");
+  assert.equal(rolling.gazing, true);
+  assert.equal(rolling.fixated, false);
+  assert.equal(rolling.pointer.x, 900 - h.run("pet.getBounds().x"));
+  h.run("playState='watch'");
+  assert.equal(h.run("pointerSenses()").fixated, true);
+  h.run("ball=null;playState='off'");
+  const free = h.run("pointerSenses()");
+  assert.equal(free.gazing, false);
+  assert.equal(free.fixated, false);
 });
 test("queued walk starts deadline at walk phase and repeated edge messages preserve direction", async (t) => {
   const h = await harness(t);
@@ -198,6 +261,11 @@ test("queued walk starts deadline at walk phase and repeated edge messages prese
   h.advance(5500);
   await h.command("phase", "walk");
   assert.equal(h.run("walkUntil-Date.now()"), 9000);
+  // Park the cat where its silhouette meets the left edge. The window reaches
+  // past it, because the window's sides are transparent.
+  h.run(
+    "(() => { const a = roamArea(screen.getPrimaryDisplay().workArea); pet.setPosition(a.x, 0); walkX = a.x; })()",
+  );
   await h.command("walk-step", -2);
   await h.command("walk-step", -2);
   assert.equal(h.bootstrap().direction, 1);

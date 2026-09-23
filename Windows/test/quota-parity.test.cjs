@@ -355,6 +355,77 @@ test("transient failure retains same-account reading and marks it stale after 15
   await service.refresh();
   assert.deepEqual(service.snapshot()[0].windows, []);
 });
+test("reminder titles name the window and bodies carry the Mac reset wording", () => {
+  const { ReminderTracker } = require("../src/quota.cjs"),
+    tracker = new ReminderTracker();
+  tracker.now = () => now;
+  const snap = (p) => ({
+    provider: "codex",
+    status: "ok",
+    windows: [
+      {
+        id: "primary",
+        label: "5 小时额度",
+        usedPercent: p,
+        resetsAt: new Date(now + 3480000).toISOString(),
+      },
+    ],
+  });
+  tracker.observe(snap(10), "a");
+  const [crossed] = tracker.observe(snap(85), "a");
+  assert.equal(crossed.title, "Codex · 5 小时额度");
+  assert.equal(crossed.body, "已用 85% 额度。58 分钟后重置");
+  const exhausted = tracker.observe(snap(100), "a");
+  // 100% reads as spent, not as "已用 100%", and both events say when it returns.
+  assert.deepEqual(
+    exhausted.map((e) => e.body),
+    ["额度已用完。58 分钟后重置", "额度已用完。58 分钟后重置"],
+  );
+});
+test("extra quota windows are marked so the card can keep them off the front", async (t) => {
+  const home = await fixture(t);
+  await fs.mkdir(path.join(home, ".claude"));
+  await fs.writeFile(
+    path.join(home, ".claude", ".credentials.json"),
+    JSON.stringify({
+      claudeAiOauth: { accessToken: "token", expiresAt: now + 1e8 },
+    }),
+  );
+  const { QuotaService } = require("../src/quota.cjs");
+  const service = new QuotaService({
+    home,
+    env: {},
+    now: () => now,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          five_hour: {
+            utilization: 20,
+            resets_at: new Date(now + 3600000).toISOString(),
+          },
+          seven_day: {
+            utilization: 30,
+            resets_at: new Date(now + 86400000).toISOString(),
+          },
+          limits: [
+            {
+              kind: "weekly_opus",
+              percent: 40,
+              resets_at: new Date(now + 86400000).toISOString(),
+            },
+          ],
+        }),
+      ),
+  });
+  t.after(() => service.stop());
+  await service.connect("claude");
+  const byId = Object.fromEntries(
+    service.snapshot()[1].windows.map((w) => [w.id, w.isExtra]),
+  );
+  assert.equal(byId.session, false);
+  assert.equal(byId.weekly_all, false);
+  assert.equal(byId.weekly_opus, true);
+});
 test("session-limit uses 95 percent hysteresis independently from threshold crossing", () => {
   const { ReminderTracker } = require("../src/quota.cjs"),
     tracker = new ReminderTracker();

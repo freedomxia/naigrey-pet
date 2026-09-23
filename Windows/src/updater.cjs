@@ -4,11 +4,45 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
-const { createHash, timingSafeEqual } = require("node:crypto");
+const {
+  createHash,
+  createPublicKey,
+  timingSafeEqual,
+  verify: verifySignature,
+} = require("node:crypto");
 const REPO = "https://github.com/freedomxia/naigrey-pet";
 const API = "https://api.github.com/repos/freedomxia/naigrey-pet/releases";
 const DAY = 86400000,
-  MAX_INSTALLER = 512 * 1024 * 1024;
+  MAX_INSTALLER = 512 * 1024 * 1024,
+  MANIFEST = "SHA256SUMS.txt",
+  MANIFEST_SIGNATURE = "SHA256SUMS.txt.sig";
+// The release key's public half, as pinned by Updater.publicKey in
+// Source/Updater.swift. A checksum alone only proves the bytes arrived intact;
+// it is written by whoever wrote the release. This proves who wrote it.
+const PUBLIC_KEY = "t/eNK8kwD/OsyhR6GEJpZygZi/bKqpVR6KMHT4QGPDY=";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+function releaseKey(base64 = PUBLIC_KEY) {
+  const raw = Buffer.from(base64, "base64");
+  if (raw.length !== 32) throw failure("unsigned");
+  return createPublicKey({
+    key: Buffer.concat([ED25519_SPKI_PREFIX, raw]),
+    format: "der",
+    type: "spki",
+  });
+}
+/// Ed25519 over the manifest's exact bytes. The installer itself is covered
+/// transitively: its SHA-256 is read out of this manifest and nowhere else, and
+/// 512 MB of installer is not something to hold in memory to check a signature.
+function verifyManifest(bytes, signatureText, publicKey = PUBLIC_KEY) {
+  const trimmed = String(signatureText).trim();
+  if (!/^[A-Za-z0-9+/]{86}==$/.test(trimmed)) throw failure("unsigned");
+  const signature = Buffer.from(trimmed, "base64");
+  if (
+    signature.length !== 64 ||
+    !verifySignature(null, bytes, releaseKey(publicKey), signature)
+  )
+    throw failure("unsigned");
+}
 class UpdateError extends Error {
   constructor(code, message) {
     super(message);
@@ -25,6 +59,7 @@ const failure = (code) =>
       origin: "更新下载地址不受信任。",
       size: "更新文件大小超出限制或下载不完整。",
       checksum: "安装包 SHA-256 校验失败，已删除下载文件。",
+      unsigned: "安装包签名校验失败，未运行未经签名的安装程序。",
       cancelled: "更新操作已取消。",
       timeout: "更新请求超时，请稍后重试。",
       busy: "另一个安装包正在下载。",
@@ -106,15 +141,24 @@ function pickRelease(releases, { currentVersion, allowPrerelease = false }) {
       !Array.isArray(release.assets)
     )
       continue;
-    const manifests = release.assets.filter(
-      (a) => a?.name === "SHA256SUMS.txt",
+    const manifests = release.assets.filter((a) => a?.name === MANIFEST);
+    const signatures = release.assets.filter(
+      (a) => a?.name === MANIFEST_SIGNATURE,
     );
+    // A release without a signed manifest is not offered at all: a Windows
+    // build that cannot be proved to be ours is not an update.
     if (
       manifests.length !== 1 ||
+      signatures.length !== 1 ||
       !officialAsset(
         release.tag_name,
         manifests[0].name,
         manifests[0].browser_download_url,
+      ) ||
+      !officialAsset(
+        release.tag_name,
+        signatures[0].name,
+        signatures[0].browser_download_url,
       )
     )
       continue;
@@ -154,6 +198,7 @@ function pickRelease(releases, { currentVersion, allowPrerelease = false }) {
         size: a.size,
         downloadURL: a.browser_download_url,
         checksumURL: manifests[0].browser_download_url,
+        signatureURL: signatures[0].browser_download_url,
       });
     }
   }
@@ -221,8 +266,10 @@ class Updater {
     fetchImpl = globalThis.fetch,
     directory = path.join(os.tmpdir(), "naigrey-updates"),
     allowPrerelease = false,
+    publicKey = PUBLIC_KEY,
     now = Date.now,
   } = {}) {
+    this.publicKey = publicKey;
     if (!semver(currentVersion)) throw failure("feed");
     Object.assign(this, {
       currentVersion,
@@ -329,7 +376,7 @@ class Updater {
     }
     return bytes;
   }
-  async text(url, kind, limit, signal) {
+  async bytes(url, kind, limit, signal) {
     const chunks = [];
     await this.consume(
       await this.request(url, kind, signal),
@@ -337,7 +384,10 @@ class Updater {
       signal,
       (chunk) => chunks.push(chunk),
     );
-    return Buffer.concat(chunks).toString("utf8");
+    return Buffer.concat(chunks);
+  }
+  async text(url, kind, limit, signal) {
+    return (await this.bytes(url, kind, limit, signal)).toString("utf8");
   }
   check({ force = false } = {}) {
     if (this.pendingCheck) return this.pendingCheck;
@@ -386,7 +436,8 @@ class Updater {
       release.size > 0 &&
       release.size <= MAX_INSTALLER &&
       officialAsset(release.tag, release.assetName, release.downloadURL) &&
-      officialAsset(release.tag, "SHA256SUMS.txt", release.checksumURL);
+      officialAsset(release.tag, MANIFEST, release.checksumURL) &&
+      officialAsset(release.tag, MANIFEST_SIGNATURE, release.signatureURL);
     if (!valid) return Promise.reject(failure("feed"));
     const info = { ...release };
     const task = this.operation(300000, async (signal) => {
@@ -401,10 +452,21 @@ class Updater {
         );
         this.owned.add(scratch);
         signal.throwIfAborted();
-        const checksum = checksumFor(
-          await this.text(info.checksumURL, "asset", 65536, signal),
-          info.assetName,
+        // Signature first: nothing in the manifest counts until the manifest
+        // itself is proved to come from the release key.
+        const manifest = await this.bytes(
+          info.checksumURL,
+          "asset",
+          65536,
+          signal,
         );
+        signal.throwIfAborted();
+        verifyManifest(
+          manifest,
+          await this.text(info.signatureURL, "asset", 4096, signal),
+          this.publicKey,
+        );
+        const checksum = checksumFor(manifest.toString("utf8"), info.assetName);
         const partial = path.join(scratch, "installer.part"),
           destination = path.join(scratch, info.assetName),
           hash = createHash("sha256");
@@ -460,4 +522,12 @@ class Updater {
     }
   }
 }
-module.exports = { Updater, UpdateError, pickRelease, compareVersions };
+module.exports = {
+  Updater,
+  UpdateError,
+  pickRelease,
+  compareVersions,
+  verifyManifest,
+  MANIFEST,
+  MANIFEST_SIGNATURE,
+};

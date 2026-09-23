@@ -10,6 +10,14 @@ on:
         description: Windows version (for example 0.2.0)
         required: true
         type: string
+      manifest_signature:
+        description: >-
+          base64 Ed25519 signature of the canonical manifest. Produce it on the
+          release machine, where the private key lives:
+          printf '%s  %s\n' <sha256> <installer-name> > SHA256SUMS.txt
+          && relkey sign ~/.naigrey/release-key SHA256SUMS.txt
+        required: true
+        type: string
 permissions:
   contents: write
   actions: read
@@ -22,6 +30,7 @@ jobs:
       BUILD_RUN_ID: ${{ inputs.run_id }}
       VERSION: ${{ inputs.version }}
       GH_REPO: ${{ github.repository }}
+      MANIFEST_SIGNATURE: ${{ inputs.manifest_signature }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,10 +60,16 @@ jobs:
           if ($lines.Count -ne 1) { throw 'Installer checksum missing or ambiguous' }
           $expected = ($lines[0] -split '\s+')[0].ToLower()
           if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Installer checksum mismatch' }
-          "$expected  $name" | Set-Content -Encoding utf8 release-input/SHA256SUMS.txt
+          # Canonical bytes: LF, no BOM, two spaces. This is exactly what the
+          # release machine signed, and exactly what the client verifies.
+          $manifest = Join-Path 'release-input' 'SHA256SUMS.txt'
+          [IO.File]::WriteAllText($manifest, "$expected  $name`n", (New-Object Text.UTF8Encoding $false))
+          [IO.File]::WriteAllText((Join-Path 'release-input' 'SHA256SUMS.txt.sig'), $env:MANIFEST_SIGNATURE.Trim())
+          node -e "require('./Windows/src/updater.cjs').verifyManifest(require('fs').readFileSync('release-input/SHA256SUMS.txt'), process.env.MANIFEST_SIGNATURE)"
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest signature does not match the pinned release key' }
           $tag = "windows-v$env:VERSION"
           $release = gh release view $tag --json isDraft | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or -not $release.isDraft) { throw 'Create an unpublished release draft first' }
-          gh release upload $tag $file 'release-input/SHA256SUMS.txt'
+          gh release upload $tag $file $manifest 'release-input/SHA256SUMS.txt.sig'
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
           Write-Output "VERIFIED_INSTALLER $name $expected"
