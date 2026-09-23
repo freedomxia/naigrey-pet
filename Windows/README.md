@@ -4,9 +4,9 @@
 
 ## 安装与使用
 
-**[下载 Windows 安装程序（.exe）](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.4/naigrey-windows-0.2.4-x64-setup.exe)**
+**[下载 Windows 安装程序（.exe）](https://github.com/freedomxia/naigrey-pet/releases/download/windows-v0.2.5/naigrey-windows-0.2.5-x64-setup.exe)**
 
-文件名：`naigrey-windows-0.2.4-x64-setup.exe`。支持 **Windows 10 / 11，x64（64 位）**。
+文件名：`naigrey-windows-0.2.5-x64-setup.exe`。支持 **Windows 10 / 11，x64（64 位）**。
 
 1. 退出正在运行的旧版奶灰。
 2. 双击下载的 `.exe` 文件，选择安装位置并完成安装。

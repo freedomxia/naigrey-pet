@@ -60,8 +60,12 @@ function bubble(value) {
   // The sprite's feet sit on GROUND, so its head is exactly catHeight above it.
   el.style.bottom = catHeight() + 16 + "px";
   el.textContent = text;
-  el.classList.remove("visible");
-  void el.offsetWidth;
+  // A quiet update refreshes a bubble already on screen — a download ticking
+  // up every second must not re-run the pop animation each time.
+  if (!(value?.quiet && el.classList.contains("visible"))) {
+    el.classList.remove("visible");
+    void el.offsetWidth;
+  }
   el.style.borderRadius = Math.min(14, el.offsetHeight / 2) + "px";
   el.classList.add("visible");
   clearTimeout(bubbleTimer);
